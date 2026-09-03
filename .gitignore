@@ -1,0 +1,14 @@
+node_modules/
+.svelte-kit/
+build/
+.vercel/
+.netlify/
+.webmcp-qa/
+.uiux-qa/
+.youtube-qa/
+.winner-qa/
+.submit-qa/
+.e2e/
+.qa/
+.DS_Store
+*.log

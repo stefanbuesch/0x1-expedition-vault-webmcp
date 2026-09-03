@@ -1,0 +1,24 @@
+{
+  "name": "webmcp-learning-classroom",
+  "version": "1.0.0",
+  "private": false,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --port 5200 --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --port 5200 --host 127.0.0.1",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^7.0.0",
+    "@sveltejs/kit": "^2.65.1",
+    "@types/node": "^24.0.0",
+    "svelte": "^5.46.4",
+    "svelte-check": "^4.3.3",
+    "vite": "^8.0.0"
+  },
+  "dependencies": {
+    "youtube-transcript-plus": "^2.0.1"
+  }
+}
