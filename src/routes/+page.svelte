@@ -818,15 +818,13 @@
           </div>
         </div>
 
-        <WebMCPBridge
-          compact
-          native={webmcpNative}
-          tools={exposedTools}
-          {activity}
-          stateLabel={`${currentRoom.title} · stage ${Math.min(stageCount, currentStage + 1)}/${stageCount}`}
-          stateDetail={`${belief}% belief · ${clearedStageCount}/${stageCount} stages cleared · ${navigationRooms.length || 0} live route${navigationRooms.length === 1 ? '' : 's'}`}
-          onOpen={() => activeTab = 'agent'}
-        />
+        <button class:webmcp-live={webmcpNative} class="run-webmcp-strip" on:click={() => activeTab = 'agent'}>
+          <span class="run-wmcp-mark">W<i></i></span>
+          <span class="run-wmcp-copy"><small>WEBMCP CO-PILOT</small><b>{webmcpNative ? `${exposedTools.length || 4} native tools on this run` : '4 browser-native tools ready'}</b></span>
+          <span class="run-wmcp-state"><small>SHARED STATE</small><b>{currentRoom.title} · {belief}% belief · stage {Math.min(stageCount, currentStage + 1)}/{stageCount}</b></span>
+          <span class="run-wmcp-latest"><small>LATEST</small><b>{activity[0]?.tool ? activity[0].tool.replaceAll('_', ' ') : 'waiting for first mutation'}</b></span>
+          <i class="run-wmcp-arrow">→</i>
+        </button>
 
         <div class="vault-grid">
           <section class="hero-column">
