@@ -157,7 +157,11 @@
       const room = savedRooms.find((candidate) => candidate.refId === id);
       return mapped && Number.isFinite(room?.map?.row) ? room.map.row : savedRooms.indexOf(room);
     }).filter((row) => row >= 0));
-    const savedCurrent = savedRooms.find((room) => room.refId === snapshot.currentRoomId) || savedRooms[0] || {};
+    const selectedRoom = savedRooms.find((room) => room.refId === snapshot.currentRoomId);
+    const nextAvailable = savedRooms.find((room) => room.status === 'available' && !savedCleared.includes(room.refId));
+    const savedCurrent = selectedRoom && !savedCleared.includes(selectedRoom.refId) && selectedRoom.status !== 'locked'
+      ? selectedRoom
+      : nextAvailable || selectedRoom || savedRooms[0] || {};
     const source = savedPack.source || {};
     return {
       id: entry.id,
