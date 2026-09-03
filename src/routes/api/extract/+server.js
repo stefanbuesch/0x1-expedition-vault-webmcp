@@ -1,17 +1,32 @@
 // @ts-nocheck
 import { json } from '@sveltejs/kit';
 import { lookup } from 'node:dns/promises';
-import { execFile } from 'node:child_process';
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { extractText, getDocumentProxy } from 'unpdf';
 import { fetchTranscript, toPlainText } from 'youtube-transcript-plus';
-
-const execFileAsync = promisify(execFile);
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_TEXT = 180_000;
+const CACHE_TTL = 15 * 60_000;
+const CACHE_LIMIT = 24;
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'www.youtu.be']);
+const extractionCache = new Map();
+
+function cachedExtraction(key) {
+  const entry = extractionCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.at > CACHE_TTL) {
+    extractionCache.delete(key);
+    return null;
+  }
+  extractionCache.delete(key);
+  extractionCache.set(key, entry);
+  return entry.value;
+}
+
+function cacheExtraction(key, value) {
+  extractionCache.delete(key);
+  extractionCache.set(key, { at: Date.now(), value });
+  while (extractionCache.size > CACHE_LIMIT) extractionCache.delete(extractionCache.keys().next().value);
+}
 
 function youtubeVideoId(raw = '') {
   try {
@@ -68,6 +83,7 @@ function isPrivateIp(address = '') {
 async function assertPublicUrl(raw) {
   const url = new URL(String(raw));
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Only public http(s) URLs are supported.');
+  if (url.username || url.password) throw new Error('Credential-bearing URLs are not allowed.');
   const host = url.hostname.toLowerCase();
   if (host === 'localhost' || host.endsWith('.local')) throw new Error('Private-network URLs are not allowed.');
   const records = await lookup(host, { all: true, verbatim: true });
@@ -118,31 +134,53 @@ async function fetchYoutubeMetadata(raw) {
   const videoId = youtubeVideoId(raw);
   if (!videoId) throw new Error('Invalid YouTube URL.');
   const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  const response = await fetch(`${canonicalUrl}&hl=en`, {
-    signal: AbortSignal.timeout(10_000),
-    headers: {
-      'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36',
-      'accept-language': 'en-US,en;q=0.9'
+
+  let oembed = {};
+  try {
+    const oembedResponse = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`, {
+      signal: AbortSignal.timeout(6_000),
+      headers: { 'user-agent': '0x1-Expedition-Vault/1.0' }
+    });
+    if (oembedResponse.ok) oembed = await oembedResponse.json();
+  } catch {
+    // The watch-page parser below remains a valid fallback if oEmbed is unavailable.
+  }
+
+  let details = {};
+  try {
+    const response = await fetch(`${canonicalUrl}&hl=en`, {
+      signal: AbortSignal.timeout(10_000),
+      headers: {
+        'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36',
+        'accept-language': 'en-US,en;q=0.9'
+      }
+    });
+    if (response.ok) {
+      const html = await response.text();
+      if (Buffer.byteLength(html, 'utf8') <= MAX_BYTES) {
+        const player = balancedJsonAfter(html, 'ytInitialPlayerResponse = ')
+          || balancedJsonAfter(html, 'ytInitialPlayerResponse=')
+          || balancedJsonAfter(html, '"ytInitialPlayerResponse":');
+        details = player?.videoDetails || {};
+      }
     }
-  });
-  if (!response.ok) throw new Error(`YouTube returned HTTP ${response.status}.`);
-  const html = await response.text();
-  if (Buffer.byteLength(html, 'utf8') > MAX_BYTES) throw new Error('YouTube source exceeded the ingestion limit.');
-  const player = balancedJsonAfter(html, 'ytInitialPlayerResponse = ')
-    || balancedJsonAfter(html, 'ytInitialPlayerResponse=')
-    || balancedJsonAfter(html, '"ytInitialPlayerResponse":');
-  const details = player?.videoDetails || {};
-  const title = decodeEntities(String(details.title || '')).trim() || `YouTube video ${videoId}`;
+  } catch {
+    // Datacenter requests to the YouTube watch page are frequently throttled.
+  }
+
+  const title = decodeEntities(String(details.title || oembed.title || '')).trim() || `YouTube video ${videoId}`;
+  const author = decodeEntities(String(details.author || oembed.author_name || '')).trim();
   const rawDescription = decodeEntities(String(details.shortDescription || '')).trim().slice(0, 12_000);
   return {
     videoId,
     url: canonicalUrl,
     title,
-    author: decodeEntities(String(details.author || '')).trim(),
+    author,
     description: rawDescription.replace(/\s+/g, ' ').trim(),
     summary: youtubeDescriptionSummary(rawDescription, title),
     lengthSeconds: Number(details.lengthSeconds || 0) || null,
-    keywords: Array.isArray(details.keywords) ? details.keywords.slice(0, 40) : []
+    keywords: Array.isArray(details.keywords) ? details.keywords.slice(0, 40) : [],
+    thumbnailUrl: String(oembed.thumbnail_url || '')
   };
 }
 
@@ -188,16 +226,13 @@ async function fetchYoutube(raw) {
 }
 
 async function pdfToText(buffer) {
-  const directory = await mkdtemp(join(tmpdir(), 'webmcp-pdf-'));
-  const input = join(directory, 'source.pdf');
-  const output = join(directory, 'source.txt');
-  try {
-    await writeFile(input, buffer);
-    await execFileAsync('/usr/bin/pdftotext', ['-layout', '-nopgbrk', input, output], { timeout: 12_000, maxBuffer: MAX_BYTES });
-    return String(await readFile(output, 'utf8')).replace(/\u0000/g, '').replace(/\n{4,}/g, '\n\n').trim().slice(0, MAX_TEXT);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const extracted = await extractText(pdf, { mergePages: true });
+  return String(extracted?.text || '')
+    .replace(/\u0000/g, '')
+    .replace(/\n{4,}/g, '\n\n')
+    .trim()
+    .slice(0, MAX_TEXT);
 }
 
 async function fetchPublic(raw) {
@@ -253,8 +288,14 @@ export async function POST({ request }) {
 
     const body = await request.json();
     if (!body?.url) return json({ success: false, error: 'URL is required.' }, { status: 400 });
-    const isYoutube = Boolean(youtubeVideoId(body.url));
-    const extracted = isYoutube ? await fetchYoutube(body.url) : await fetchPublic(body.url);
+    const rawUrl = String(body.url).trim();
+    const videoId = youtubeVideoId(rawUrl);
+    const isYoutube = Boolean(videoId);
+    const cacheKey = isYoutube ? `youtube:${videoId}` : `url:${rawUrl}`;
+    const cached = cachedExtraction(cacheKey);
+    if (cached) return json({ success: true, ...cached, source: isYoutube ? 'youtube' : 'url', cached: true });
+    const extracted = isYoutube ? await fetchYoutube(rawUrl) : await fetchPublic(rawUrl);
+    cacheExtraction(cacheKey, extracted);
     return json({ success: true, ...extracted, source: isYoutube ? 'youtube' : 'url' });
   } catch (error) {
     return json({ success: false, error: error?.message || 'Source extraction failed.' }, { status: 422 });

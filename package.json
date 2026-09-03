@@ -19,6 +19,7 @@
     "vite": "^8.0.0"
   },
   "dependencies": {
+    "unpdf": "^1.8.1",
     "youtube-transcript-plus": "^2.0.1"
   }
 }

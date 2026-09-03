@@ -10,16 +10,31 @@ function modelContext() {
 
 export function createLearningWebMCP({ getState, actions, onActivity }) {
   let controller;
+  let registeredContext = null;
+  let registeredSignature = '';
+  let registeredTools = [];
   const supported = () => Boolean(modelContext()?.registerTool);
 
   async function sync() {
-    controller?.abort();
-    controller = new AbortController();
     const mc = modelContext();
-    if (!mc?.registerTool) return { supported: false, tools: [] };
+    if (!mc?.registerTool) {
+      controller?.abort();
+      controller = undefined;
+      registeredContext = null;
+      registeredSignature = '';
+      registeredTools = [];
+      return { supported: false, tools: [] };
+    }
 
     const state = getState();
     const modules = state.modules || [];
+    const signature = `${state.packId || ''}:${modules.map((module) => module.id).join('|')}`;
+    if (registeredContext === mc && registeredSignature === signature && registeredTools.length) {
+      return { supported: true, tools: registeredTools };
+    }
+
+    controller?.abort();
+    controller = new AbortController();
     const names = [];
     const add = async (tool) => {
       names.push(tool.name);
@@ -107,8 +122,21 @@ export function createLearningWebMCP({ getState, actions, onActivity }) {
         // Browser agents can still discover registered tools if in-page enumeration is unavailable.
       }
     }
+    registeredContext = mc;
+    registeredSignature = signature;
+    registeredTools = exposed;
     return { supported: true, tools: exposed };
   }
 
-  return { sync, supported, destroy: () => controller?.abort() };
+  return {
+    sync,
+    supported,
+    destroy: () => {
+      controller?.abort();
+      controller = undefined;
+      registeredContext = null;
+      registeredSignature = '';
+      registeredTools = [];
+    }
+  };
 }

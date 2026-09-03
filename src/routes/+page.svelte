@@ -36,6 +36,11 @@
   let showPostRun = false;
   let adapter;
   let timer;
+  let toolSyncTimer;
+  let runSaveTimer;
+  let persistTimer;
+  let persistIdle;
+  let lastPersistedVault = '';
 
   const toolCatalog = [
     { name: 'ingest_learning_material', mode: 'WRITE', description: 'Forge a new branching expedition from a topic, URL, transcript, article, or extracted document.' },
@@ -46,6 +51,7 @@
 
   let ingestTitle = '';
   let ingestUrl = '';
+  let quickForgeUrl = '';
   let ingestContent = '';
   let ingestError = '';
   let uploadedFileName = '';
@@ -208,13 +214,35 @@
     };
   }
 
-  function persistVault() {
+  function persistVault(immediate = false) {
     if (!storageReady || typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify({ activePackId, packs: packLibrary }));
-    } catch {
-      // The app remains fully usable if browser storage is unavailable.
+    const write = () => {
+      persistTimer = undefined;
+      persistIdle = undefined;
+      try {
+        const payload = JSON.stringify({ activePackId, packs: packLibrary });
+        if (payload === lastPersistedVault) return;
+        localStorage.setItem(VAULT_STORAGE_KEY, payload);
+        lastPersistedVault = payload;
+      } catch {
+        // The app remains fully usable if browser storage is unavailable.
+      }
+    };
+
+    if (persistTimer) clearTimeout(persistTimer);
+    if (persistIdle && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(persistIdle);
+    if (immediate) {
+      write();
+      return;
     }
+    persistTimer = setTimeout(() => {
+      persistTimer = undefined;
+      if (typeof window.requestIdleCallback === 'function') {
+        persistIdle = window.requestIdleCallback(write, { timeout: 400 });
+      } else {
+        write();
+      }
+    }, 120);
   }
 
   function upsertCurrentPack(persist = true) {
@@ -294,17 +322,31 @@
     activity = [{ tool, args: typeof args === 'string' ? args : JSON.stringify(args), result, kind }, ...activity].slice(0, 12);
   }
 
+  function scheduleRunSave() {
+    if (typeof window === 'undefined') return;
+    if (runSaveTimer) clearTimeout(runSaveTimer);
+    runSaveTimer = setTimeout(() => {
+      runSaveTimer = undefined;
+      upsertCurrentPack();
+    }, 120);
+  }
+
   function scheduleToolSync(saveRun = true) {
-    if (typeof window !== 'undefined') setTimeout(() => {
-      syncTools();
-      if (saveRun) upsertCurrentPack();
-    }, 0);
+    if (typeof window === 'undefined') return;
+    if (!toolSyncTimer) {
+      toolSyncTimer = setTimeout(() => {
+        toolSyncTimer = undefined;
+        syncTools();
+      }, 0);
+    }
+    if (saveRun) scheduleRunSave();
   }
 
   function applyBelief(delta, actor = 'human', roomId = activeRoomId || currentRoomId) {
     beliefDelta = delta;
     belief = Math.max(5, Math.min(98, belief + delta));
-    beliefHistory = [...beliefHistory, { index: beliefHistory.length, belief, delta, roomId, actor }];
+    const index = (beliefHistory.at(-1)?.index ?? -1) + 1;
+    beliefHistory = [...beliefHistory, { index, belief, delta, roomId, actor }].slice(-64);
     scheduleToolSync();
   }
 
@@ -463,6 +505,21 @@
     } finally {
       isIngesting = false;
     }
+  }
+
+  async function handleQuickForge() {
+    const url = quickForgeUrl.trim();
+    if (!url) {
+      activeTab = 'ingest';
+      return;
+    }
+    ingestTitle = '';
+    ingestContent = '';
+    ingestSourceMeta = null;
+    uploadedFileName = '';
+    ingestUrl = url;
+    await handleIngestMaterial();
+    if (!ingestError) quickForgeUrl = '';
   }
 
   async function handleFileUpload(event) {
@@ -631,7 +688,9 @@
 
   onMount(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem(VAULT_STORAGE_KEY) || 'null');
+      const storedRaw = localStorage.getItem(VAULT_STORAGE_KEY) || '';
+      lastPersistedVault = storedRaw;
+      const stored = JSON.parse(storedRaw || 'null');
       if (Array.isArray(stored?.packs) && stored.packs.length) {
         packLibrary = stored.packs;
         const preferred = stored.activePackId && stored.packs.some((entry) => entry.id === stored.activePackId)
@@ -659,19 +718,25 @@
       activeTab = 'library';
     }
 
-    const saveBeforeExit = () => {
-      if (activeTab === 'library') persistVault();
-      else upsertCurrentPack();
+    const flushCurrentRun = () => {
+      if (activeTab === 'library') persistVault(true);
+      else {
+        upsertCurrentPack(false);
+        persistVault(true);
+      }
     };
-    window.addEventListener('beforeunload', saveBeforeExit);
+    window.addEventListener('beforeunload', flushCurrentRun);
     timer = setInterval(() => {
       elapsed += 1;
-      if (elapsed % 10 === 0 && activeTab !== 'library') upsertCurrentPack();
+      if (elapsed % 30 === 0 && activeTab !== 'library') upsertCurrentPack();
     }, 1000);
     return () => {
-      if (activeTab === 'library') persistVault();
-      else upsertCurrentPack();
-      window.removeEventListener('beforeunload', saveBeforeExit);
+      if (toolSyncTimer) clearTimeout(toolSyncTimer);
+      if (runSaveTimer) clearTimeout(runSaveTimer);
+      if (persistTimer) clearTimeout(persistTimer);
+      if (persistIdle && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(persistIdle);
+      flushCurrentRun();
+      window.removeEventListener('beforeunload', flushCurrentRun);
       clearInterval(timer);
       adapter?.destroy();
     };
@@ -683,6 +748,9 @@
   <meta name="description" content="An agent-native learning roguelike powered by WebMCP." />
   <meta name="theme-color" content="#f7f8fb" />
   <link rel="icon" type="image/webp" href="/assets/vault-crest.webp" />
+  <link rel="preload" as="image" href="/assets/expedition-map.webp" fetchpriority="high" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/vault.css" />
 </svelte:head>
@@ -722,14 +790,13 @@
     <header class="topbar">
       <div class="topbar-inner">
         <button class="brand" on:click={goLibrary}>
-          <span class="brand-mark">◇</span>
+          <span class="brand-mark"><img src="/assets/vault-crest.webp" alt="" /></span>
           <span><b>0x1 Expedition Vault</b><small>Learning Roguelike</small></span>
         </button>
         <nav class="primary-nav">
-          <button class:active={activeTab === 'library'} on:click={goLibrary}>Vault</button>
-          <button class:active={activeTab === 'classroom'} on:click={() => { upsertCurrentPack(); activeTab = 'classroom'; mode = 'map'; }}>Current Run</button>
-          <button class:active={activeTab === 'pack'} on:click={() => { upsertCurrentPack(); activeTab = 'pack'; }}>Pack Details</button>
-          <button class:active={activeTab === 'ingest'} on:click={() => { upsertCurrentPack(); activeTab = 'ingest'; }}>Forge</button>
+          <button class:active={activeTab === 'classroom'} on:click={() => { upsertCurrentPack(); activeTab = 'classroom'; mode = 'map'; }}>Expeditions</button>
+          <button class:active={activeTab === 'library' || activeTab === 'pack'} on:click={goLibrary}>Knowledge Packs</button>
+          <button class:active={activeTab === 'ingest'} on:click={() => { upsertCurrentPack(); activeTab = 'ingest'; }}>Forge from URL</button>
           <button class:active={activeTab === 'agent'} on:click={() => { upsertCurrentPack(); activeTab = 'agent'; }}>WebMCP</button>
         </nav>
         <button class:webmcp-live={webmcpNative} class="party-state webmcp-state" on:click={() => { upsertCurrentPack(); activeTab = 'agent'; }}><span></span><b>WebMCP</b>{webmcpNative ? `${exposedTools.length || 4} tools live` : '4 tools ready'}</button>
@@ -742,7 +809,6 @@
         {activePackId}
         {webmcpNative}
         webmcpTools={exposedTools}
-        {activity}
         onOpen={(id) => restorePack(id, true)}
         onForge={() => { upsertCurrentPack(); activeTab = 'ingest'; }}
         onAgent={() => { upsertCurrentPack(); activeTab = 'agent'; }}
@@ -818,45 +884,21 @@
           </div>
         </div>
 
-        <button class:webmcp-live={webmcpNative} class="run-webmcp-strip" on:click={() => activeTab = 'agent'}>
-          <span class="run-wmcp-mark">W<i></i></span>
-          <span class="run-wmcp-copy"><small>WEBMCP CO-PILOT</small><b>{webmcpNative ? `${exposedTools.length || 4} native tools on this run` : '4 browser-native tools ready'}</b></span>
-          <span class="run-wmcp-state"><small>SHARED STATE</small><b>{currentRoom.title} · {belief}% belief · stage {Math.min(stageCount, currentStage + 1)}/{stageCount}</b></span>
-          <span class="run-wmcp-latest"><small>LATEST</small><b>{activity[0]?.tool ? activity[0].tool.replaceAll('_', ' ') : 'waiting for first mutation'}</b></span>
-          <i class="run-wmcp-arrow">→</i>
-        </button>
-
         <div class="vault-grid">
           <section class="hero-column">
             <DungeonMap rooms={rooms} currentRefId={currentRoomId} clearedRefIds={cleared} onRoomClick={openRoom} />
-            <section class="forge-bar" class:grounded={Boolean(sourceGroundingTitle)}>
-              <div class="forge-icon">{sourceGroundingTitle ? '✓' : '↗'}</div>
-              <div>
-                <b>{sourceGroundingTitle || 'Generate a Knowledge Pack from any source'}</b>
-                <span>{sourceGroundingTitle ? sourceGroundingDetail : 'Paste a topic, YouTube lecture, article, PDF, or notes and start a new run instantly.'}</span>
+            <section class="forge-bar quick-forge" class:grounded={Boolean(sourceGroundingTitle)}>
+              <div class="forge-icon">↗</div>
+              <div class="forge-copyline">
+                <b>Generate Knowledge Pack from any URL</b>
+                <span>{sourceGroundingTitle ? `Current run grounded in ${sourceGroundingTitle}. Forge another source instantly.` : 'YouTube, article, public PDF, or any supported URL.'}</span>
               </div>
-              <button on:click={() => activeTab = 'ingest'}>{sourceGroundingTitle ? 'Forge another' : 'Open Forge'}</button>
+              <input bind:value={quickForgeUrl} placeholder="Paste YouTube, PDF, article, or source URL…" on:keydown={(event) => event.key === 'Enter' && handleQuickForge()} />
+              <button disabled={isIngesting} on:click={handleQuickForge}>{isIngesting ? 'Forging…' : quickForgeUrl.trim() ? 'Forge Pack' : 'Open Forge'}</button>
             </section>
           </section>
 
           <aside class="right-rail">
-            <section class="rail-card route-card">
-              <div class="rail-heading"><b>{navigationRooms.length > 1 ? 'Choose your route' : overallProgress >= 100 ? 'Expedition complete' : 'Next move'}</b><span>Stage {Math.min(stageCount, currentStage + 1)} / {stageCount}</span></div>
-              {#if navigationRooms.length}
-                <p>{navigationRooms.length > 1 ? 'Two viable paths are open. Pick the lane you want to prove next.' : 'Your next encounter is ready. Jump straight in or inspect it on the map.'}</p>
-                <div class="route-options">
-                  {#each navigationRooms.slice(0, 3) as room}
-                    <button class:recommended={room.refId === currentRoomId} on:click={() => openRoom(room.refId)}>
-                      <span><b>{room.title}</b><small>{room.subtitle || room.nodeType}</small></span>
-                      <i>{room.refId === currentRoomId ? 'Enter →' : 'Choose →'}</i>
-                    </button>
-                  {/each}
-                </div>
-              {:else}
-                <div class="run-complete-mini"><img src="/assets/boss.webp" alt="" /><span><b>Run cleared</b><small>6-stage path complete. Optional rooms remain available from the curriculum.</small></span></div>
-              {/if}
-            </section>
-
             <section class="rail-card mastery-card">
               <div class="rail-heading"><b>Mastery Progress</b><span>{overallProgress}% run</span></div>
               <div class="mastery-body">
@@ -875,8 +917,22 @@
               <div class="depth-track">{#each Array(stageCount) as _, stage}<span class:done={clearedStageRows.includes(stage)} class:current={stage === currentStage}></span>{/each}</div>
             </section>
 
+            <section class="rail-card concept-mastery-card">
+              <div class="rail-heading"><b>Concept Mastery</b><button on:click={() => activeTab = 'pack'}>View map</button></div>
+              <div class="concept-badges">
+                {#each rooms.slice(0, 6) as room, index}
+                  {@const done = cleared.includes(room.refId)}
+                  {@const current = room.refId === currentRoomId}
+                  <button class:done class:current class:locked={room.status === 'locked'} disabled={room.status === 'locked'} on:click={() => openRoom(room.refId)} aria-label={`${room.title}, ${done ? 'mastered' : current ? 'current' : room.status}`}>
+                    <span><img src={roomBadge(room)} alt="" loading="lazy" decoding="async" /></span>
+                    <small>{index + 1}</small>
+                  </button>
+                {/each}
+              </div>
+            </section>
+
             <section class="rail-card curriculum-card">
-              <div class="rail-heading"><b>Curriculum</b><span>{rooms.length} rooms</span></div>
+              <div class="rail-heading"><b>Curriculum Structure</b><span>{rooms.length} rooms</span></div>
               <div class="curriculum-list">
                 {#each rooms as room, index}
                   {@const done = cleared.includes(room.refId)}
@@ -892,8 +948,8 @@
             </section>
 
             <section class="rail-card agent-card webmcp-card">
-              <div class="rail-heading"><b>WebMCP Co-Pilot</b><span class="live-dot">{webmcpNative ? 'Native · live' : '4 tools ready'}</span></div>
-              <p>Browser agents discover these tools from <code>document.modelContext</code> and mutate the same run state shown on this map.</p>
+              <div class="rail-heading"><b>Guide Agent <em>//</em></b><span class="live-dot">{webmcpNative ? 'Active · WebMCP' : 'WebMCP ready'}</span></div>
+              <p>Your browser-native co-pilot shares the same expedition state, gates, mastery, and checkpoints shown on this map.</p>
               <div class="tool-chips">{#each (exposedTools.length ? exposedTools : ['ingest_learning_material', 'explore_module', 'submit_solution', 'inspect_progress']) as tool}<code>{tool}</code>{/each}</div>
               {#if activity.length}<div class="agent-event"><small>LATEST SHARED MUTATION</small><b>{activity[0].tool}</b><span>{activity[0].result}</span></div>{/if}
               <button class="agent-console-cta" on:click={() => activeTab = 'agent'}>Open WebMCP Console →</button>
@@ -966,7 +1022,7 @@
               {@const parts = Array.isArray(room.parts) && room.parts.length ? room.parts : [room.part].filter(Boolean)}
               <article class:cleared={cleared.includes(room.refId)} class:current={room.refId === currentRoomId} class:locked={room.status === 'locked'} class="topology-room-card">
                 <header>
-                  <div class="topology-room-icon"><img src={roomBadge(room)} alt="" /></div>
+                  <div class="topology-room-icon"><img src={roomBadge(room)} alt="" loading="lazy" decoding="async" /></div>
                   <div><span>STAGE {Number.isFinite(room.map?.row) ? room.map.row + 1 : index + 1}</span><b>{cleared.includes(room.refId) ? 'MASTERED' : room.status.toUpperCase()}</b></div>
                 </header>
                 <h3>{room.title}</h3>
