@@ -107,6 +107,21 @@
     const kind = pack.source?.contentType || pack.source?.type || '';
     return [kind, amount].filter(Boolean).join(' · ');
   })();
+  $: checkpointCount = rooms.reduce((sum, room) => sum + (Array.isArray(room.parts) && room.parts.length ? room.parts.length : room.part ? 1 : 0), 0);
+  $: cognitionCheckCount = rooms.reduce((sum, room) => {
+    const parts = Array.isArray(room.parts) && room.parts.length ? room.parts : [room.part].filter(Boolean);
+    return sum + parts.filter((part) => part?.cognitionCheck).length;
+  }, 0);
+  $: cognitionGateDisplay = cognitionCheckCount || rooms.reduce((sum, room) => {
+    const parts = Array.isArray(room.parts) && room.parts.length ? room.parts : [room.part].filter(Boolean);
+    return sum + parts.filter((part) => ['quiz', 'recall', 'dialogue', 'case-study'].includes(part?.type)).length;
+  }, 0);
+  $: branchCount = rooms.reduce((sum, room) => sum + (room.edges || []).filter((edge) => ['OPTION', 'BRANCH'].includes(edge.type)).length, 0);
+  $: videoRoomCount = rooms.filter((room) => {
+    const parts = Array.isArray(room.parts) && room.parts.length ? room.parts : [room.part].filter(Boolean);
+    return parts.some((part) => part?.type === 'video');
+  }).length;
+  $: packProvenanceLabel = pack.source?.provenance ? sourceLabelFor(pack.source) : 'Curated reference pack';
 
   function seedDemoState() {
     const n = Math.min(3, rooms.length);
@@ -144,6 +159,17 @@
     if (source.provenance === 'pasted-text') return 'Pasted notes';
     if (source.provenance === 'topic') return 'Topic brief';
     return 'Bundled pack';
+  }
+
+  function roomBadge(room = {}) {
+    const title = String(room.title || '').toLowerCase();
+    if (room.nodeType === 'boss' || title.includes('defense') || title.includes('commutation')) return '/assets/boss.webp';
+    if (title.includes('load') || title.includes('motor') || title.includes('mechanism')) return '/assets/gear.webp';
+    if (title.includes('lenz') || title.includes('balance') || title.includes('evidence')) return '/assets/scales.webp';
+    if (title.includes('emf') || title.includes('transfer')) return '/assets/lightning.webp';
+    if (title.includes('faraday') || room.nodeType === 'quiz' || title.includes('thesis')) return '/assets/book.webp';
+    if (room.nodeType === 'video' || title.includes('source')) return '/assets/crystal.webp';
+    return '/assets/vault-crest.webp';
   }
 
   function summarizeLibraryEntry(entry) {
@@ -723,27 +749,58 @@
       />
     {:else if activeTab === 'ingest'}
       <main class="forge-page">
-        <button class="back-link" on:click={goLibrary}>← Back to vault</button>
+        <div class="product-heading forge-heading">
+          <div>
+            <span>FORGE / SOURCE INGESTION</span>
+            <h1>Turn source material into a playable expedition.</h1>
+            <p>Ingest once. The same generated graph becomes the learner experience and the WebMCP agent state.</p>
+          </div>
+          <button class="secondary-action" on:click={goLibrary}>← Back to vault</button>
+        </div>
+
         <section class="forge-hero">
           <div class="forge-copy">
-            <span>KNOWLEDGE PACK FORGE</span>
-            <h1>Turn any source into a playable expedition.</h1>
-            <p>Topic, YouTube lecture, public article/PDF URL, pasted notes, markdown, or a PDF/text upload. The source becomes one branching run state shared by the learner and WebMCP.</p>
+            <span>SUPPORTED SOURCES</span>
+            <h2>Bring the material. The Forge builds the run.</h2>
+            <p>Use a topic, YouTube lecture, public article or PDF URL, pasted notes, Markdown, or a local document.</p>
             <div class="forge-source-grid">
               <div><i>▶</i><span><b>YouTube</b><small>Video + public transcript</small></span></div>
               <div><i>↗</i><span><b>Web</b><small>Article or public PDF URL</small></span></div>
               <div><i>▤</i><span><b>Files</b><small>PDF · TXT · Markdown</small></span></div>
-              <div><i>¶</i><span><b>Notes</b><small>Paste raw text or a topic</small></span></div>
+              <div><i>¶</i><span><b>Notes</b><small>Raw text or a topic brief</small></span></div>
             </div>
-            <div class="forge-pipeline"><span>EXTRACT</span><i></i><span>MODEL</span><i></i><span>BRANCH</span><i></i><span>PROVE</span></div>
+
+            <div class="forge-output">
+              <div class="forge-output-head"><span>WHAT THE FORGE CREATES</span><b>one shared run</b></div>
+              <div class="forge-output-grid">
+                <div><strong>6</strong><small>progression stages</small></div>
+                <div><strong>8</strong><small>branching rooms</small></div>
+                <div><strong>2</strong><small>route decisions</small></div>
+                <div><strong>✓</strong><small>cognition gates</small></div>
+              </div>
+            </div>
+
+            <div class="forge-context">
+              <div><span>WEBMCP</span><b>{webmcpNative ? `${exposedTools.length || 4} native tools live` : '4 native tools ready'}</b></div>
+              <div><span>VAULT</span><b>{libraryCards.length} saved {libraryCards.length === 1 ? 'pack' : 'packs'}</b></div>
+              <div class="wide"><span>CURRENT RUN</span><b>{pack.title}</b></div>
+            </div>
           </div>
+
           <div class="forge-form">
+            <header class="forge-form-head">
+              <div><span>NEW KNOWLEDGE PACK</span><h2>Source input</h2></div>
+              <b class:ready={Boolean(ingestTitle.trim() || ingestContent.trim() || ingestUrl.trim() || uploadedFileName)}>{isExtractingSource ? 'Extracting…' : uploadedFileName ? 'Document ready' : 'Awaiting source'}</b>
+            </header>
             <label>Topic or course title<input bind:value={ingestTitle} placeholder="e.g. Plate tectonics" /></label>
             <label>Source URL<input bind:value={ingestUrl} placeholder="https://youtube.com/watch?v=…" /></label>
             <label class="wide">Notes / transcript<textarea bind:value={ingestContent} rows="7" placeholder="Paste text, transcript, lecture notes, or article excerpts…"></textarea></label>
             <label class="file-drop wide"><span>{isExtractingSource ? 'Extracting document…' : uploadedFileName ? `Ready · ${uploadedFileName}` : 'Drop in a PDF, TXT, or Markdown file'}</span><input type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" on:change={handleFileUpload} /></label>
             {#if ingestError}<div class="form-error wide">{ingestError}</div>{/if}
-            <button class="forge-submit wide" disabled={isIngesting || isExtractingSource} on:click={handleIngestMaterial}>{isIngesting ? 'Forging branching expedition…' : 'Forge Knowledge Pack'}</button>
+            <div class="forge-submit-row wide">
+              <div><span>EXTRACT</span><i></i><span>MODEL</span><i></i><span>BRANCH</span><i></i><span>PROVE</span></div>
+              <button class="forge-submit" disabled={isIngesting || isExtractingSource} on:click={handleIngestMaterial}>{isIngesting ? 'Forging expedition…' : 'Forge Knowledge Pack →'}</button>
+            </div>
           </div>
         </section>
       </main>
@@ -847,27 +904,54 @@
         </div>
       </main>
     {:else if activeTab === 'pack'}
-      <main class="product-page">
+      <main class="product-page pack-page">
         <div class="product-heading">
-          <div><span>KNOWLEDGE PACK / LIVE ARTIFACT</span><h1>{pack.title}</h1><p>The exact source, concepts, graph topology, and checkpoints driving the current expedition.</p></div>
-          <button class="secondary-action" on:click={() => activeTab = 'classroom'}>Open expedition →</button>
+          <div><span>KNOWLEDGE PACK / LIVE ARTIFACT</span><h1>{pack.title}</h1><p>Source grounding, extracted concepts, cognition checks, and the exact room graph driving this run.</p></div>
+          <button class="secondary-action strong" on:click={() => activeTab = 'classroom'}>Open expedition →</button>
         </div>
 
-        <div class="inspect-grid">
+        <section class="pack-hero surface-card">
+          <div class="pack-hero-art">
+            <div class="pack-map-art"></div>
+            <div class="pack-art-shade"></div>
+            <span class="pack-source-badge">{packProvenanceLabel}</span>
+            <img src="/assets/vault-crest.webp" alt="" />
+          </div>
+          <div class="pack-hero-copy">
+            <span>ACTIVE KNOWLEDGE PACK</span>
+            <h2>{pack.title}</h2>
+            <p>{pack.goal}</p>
+            <div class="pack-hero-stats">
+              <div><strong>{overallProgress}%</strong><small>RUN COMPLETE</small></div>
+              <div><strong>{stageCount}</strong><small>STAGES</small></div>
+              <div><strong>{checkpointCount}</strong><small>CHECKPOINTS</small></div>
+              <div><strong>{cognitionGateDisplay}</strong><small>COGNITION GATES</small></div>
+            </div>
+          </div>
+          <aside class="pack-next-card">
+            <span>NEXT ENCOUNTER</span>
+            <img src={roomBadge(navigationRooms[0] || currentRoom)} alt="" />
+            <h3>{navigationRooms[0]?.title || currentRoom.title}</h3>
+            <p>{overallProgress >= 100 ? 'Main path cleared. Review any optional lane.' : `${belief}% belief · stage ${Math.min(stageCount, currentStage + 1)} of ${stageCount}`}</p>
+            <button on:click={() => activeTab = 'classroom'}>{overallProgress >= 100 ? 'Review map →' : 'Continue run →'}</button>
+          </aside>
+        </section>
+
+        <div class="inspect-grid pack-inspect-grid">
           <section class="surface-card source-card">
-            <div class="surface-heading"><div><span>SOURCE GROUNDING</span><h2>{sourceGroundingTitle || pack.source?.type || 'Bundled knowledge pack'}</h2></div><b>{pack.seed}</b></div>
-            <p>{sourceGroundingDetail || pack.goal}</p>
+            <div class="surface-heading"><div><span>SOURCE GROUNDING</span><h2>{sourceGroundingTitle || packProvenanceLabel}</h2></div><b>{pack.seed}</b></div>
+            <p>{sourceGroundingDetail || (pack.source?.provenance ? 'Source extraction is attached to this run.' : 'Curated source material and verified media are bundled with this reference pack.')}</p>
             {#if pack.source?.url}<div class="source-url">{pack.source.url}</div>{/if}
             <div class="source-metrics">
-              <div><small>PROVENANCE</small><strong>{pack.source?.provenance || 'bundled'}</strong></div>
-              <div><small>EXTRACTED</small><strong>{pack.source?.extractedCharacters || pack.source?.characterCount || 0} chars</strong></div>
-              <div><small>TRANSCRIPT</small><strong>{pack.source?.transcriptStatus || 'n/a'}</strong></div>
+              <div><small>PROVENANCE</small><strong>{packProvenanceLabel}</strong></div>
+              <div><small>SOURCE DEPTH</small><strong>{pack.source?.extractedCharacters || pack.source?.characterCount ? `${pack.source?.extractedCharacters || pack.source?.characterCount} chars` : `${videoRoomCount} verified media`}</strong></div>
+              <div><small>BRANCHES</small><strong>{branchCount || 'linear reference'}</strong></div>
               <div><small>RUN SHAPE</small><strong>{stageCount} stages · {rooms.length} rooms</strong></div>
             </div>
           </section>
 
           <section class="surface-card concept-card">
-            <div class="surface-heading"><div><span>CONCEPT MODEL</span><h2>What the expedition extracted</h2></div><b>{(pack.concepts || []).length || rooms.length}</b></div>
+            <div class="surface-heading"><div><span>CONCEPT MODEL</span><h2>What the expedition is training</h2></div><b>{(pack.concepts || []).length || rooms.length}</b></div>
             <div class="concept-cloud">
               {#each ((pack.concepts || []).length ? pack.concepts : rooms.map((room) => room.title)) as concept}
                 <span>{concept}</span>
@@ -877,27 +961,61 @@
           </section>
         </div>
 
-        <section class="surface-card topology-card">
-          <div class="surface-heading"><div><span>CURRICULUM GRAPH</span><h2>Branching room topology</h2></div><b>{pack.template || 'expedition'}</b></div>
-          <div class="topology-list">
+        <section class="surface-card topology-card topology-card-grid">
+          <div class="surface-heading"><div><span>CURRICULUM GRAPH</span><h2>Rooms, checkpoints, and route topology</h2></div><b>{pack.template || 'expedition'}</b></div>
+          <div class="topology-grid">
             {#each rooms as room, index}
               {@const parts = Array.isArray(room.parts) && room.parts.length ? room.parts : [room.part].filter(Boolean)}
-              <div class="topology-row">
-                <span class="topology-index">{index + 1}</span>
-                <div class="topology-copy"><b>{room.title}</b><small>Stage {Number.isFinite(room.map?.row) ? room.map.row + 1 : index + 1} · {room.status} · {parts.length} checkpoint{parts.length === 1 ? '' : 's'}</small></div>
-                <div class="part-tags">{#each parts as part}<code>{part.type}</code>{#if part.cognitionCheck}<code class="cognition-tag">cognition · {part.cognitionCheck.kind}</code>{/if}{/each}</div>
-                <div class="edge-tags">{#each room.edges || [] as edge}<span>{edge.type} → {rooms.find((candidate) => candidate.refId === edge.targetRefId)?.title || edge.targetRefId}</span>{/each}</div>
-              </div>
+              <article class:cleared={cleared.includes(room.refId)} class:current={room.refId === currentRoomId} class:locked={room.status === 'locked'} class="topology-room-card">
+                <header>
+                  <div class="topology-room-icon"><img src={roomBadge(room)} alt="" /></div>
+                  <div><span>STAGE {Number.isFinite(room.map?.row) ? room.map.row + 1 : index + 1}</span><b>{cleared.includes(room.refId) ? 'MASTERED' : room.status.toUpperCase()}</b></div>
+                </header>
+                <h3>{room.title}</h3>
+                <p>{room.subtitle || `${parts.length} checkpoint${parts.length === 1 ? '' : 's'} in this room.`}</p>
+                <div class="part-tags">{#each parts as part}<code>{part.type}</code>{#if part.cognitionCheck}<code class="cognition-tag">{part.cognitionCheck.kind}</code>{/if}{/each}</div>
+                <footer>
+                  <span>{parts.length} checkpoint{parts.length === 1 ? '' : 's'}</span>
+                  <div class="edge-tags">{#each room.edges || [] as edge}<span>{edge.type} → {rooms.find((candidate) => candidate.refId === edge.targetRefId)?.title || edge.targetRefId}</span>{/each}</div>
+                </footer>
+              </article>
             {/each}
           </div>
         </section>
       </main>
     {:else if activeTab === 'agent'}
       <main class="product-page agent-console-page">
-        <div class="product-heading">
-          <div><span>WEBMCP / DOCUMENT.MODELCONTEXT</span><h1>WebMCP Console</h1><p>Native browser tools and learner UI operate on one expedition state: same rooms, same gates, same checkpoint index, same mastery trajectory.</p></div>
-          <div class:webmcp-on={webmcpNative} class="console-status"><i></i>{webmcpNative ? 'document.modelContext live' : 'Browser tool surface ready'}</div>
+        <div class="product-heading webmcp-heading">
+          <div><span>WEBMCP / DOCUMENT.MODELCONTEXT</span><h1>Human and browser agent, one live expedition.</h1><p>The browser exposes explicit learning actions instead of forcing an agent to infer state from buttons or scrape the DOM.</p></div>
+          <div class:webmcp-on={webmcpNative} class="console-status"><i></i>{webmcpNative ? `${exposedTools.length || 4} native tools live` : 'WebMCP surface ready'}</div>
         </div>
+
+        <section class="webmcp-hero-grid">
+          <article class="surface-card webmcp-state-hero">
+            <div class="webmcp-state-art"><div></div><img src={roomBadge(currentRoom)} alt="" /></div>
+            <div class="webmcp-state-copy">
+              <span>ONE SHARED RUN STATE</span>
+              <h2>{pack.title}</h2>
+              <p>Human actions and WebMCP calls mutate the same room graph, checkpoint, mastery trajectory, and source provenance.</p>
+              <div class="webmcp-state-metrics">
+                <div><strong>{belief}%</strong><small>BELIEF</small></div>
+                <div><strong>{overallProgress}%</strong><small>RUN</small></div>
+                <div><strong>{clearedStageCount}/{stageCount}</strong><small>DEPTH</small></div>
+                <div><strong>{activeRoom ? `${activePartIndex + 1}/${Math.max(1, activeParts.length)}` : 'MAP'}</strong><small>CHECKPOINT</small></div>
+              </div>
+            </div>
+          </article>
+
+          <aside class="surface-card webmcp-now-card">
+            <div class="surface-heading"><div><span>RIGHT NOW</span><h2>Agent operating envelope</h2></div><b>{webmcpNative ? 'LIVE' : 'READY'}</b></div>
+            <div class="agent-envelope-list">
+              <div><i>1</i><span><b>Current learner state</b><small>{activeRoom?.title || currentRoom.title} · {belief}% belief</small></span></div>
+              <div><i>2</i><span><b>Available navigation</b><small>{navigationRooms.length || 0} route{navigationRooms.length === 1 ? '' : 's'} currently enterable</small></span></div>
+              <div><i>3</i><span><b>Human-only guard</b><small>Video/source checkpoints cannot be counterfeited by submit_solution.</small></span></div>
+              <div><i>4</i><span><b>Latest shared mutation</b><small>{activity[0]?.tool || 'Waiting for first call'}{activity[0]?.result ? ` · ${activity[0].result}` : ''}</small></span></div>
+            </div>
+          </aside>
+        </section>
 
         <WebMCPBridge
           native={webmcpNative}
@@ -910,7 +1028,7 @@
 
         <div class="console-grid">
           <section class="surface-card state-card">
-            <div class="surface-heading"><div><span>LIVE STATE</span><h2>{currentRoom.title}</h2></div><button on:click={() => { const snapshot = actions.inspectProgress(); log('inspect_progress', 'console', `Mastery ${snapshot.masteryScore}% · ${snapshot.progress}% run`, 'read'); }}>Refresh snapshot</button></div>
+            <div class="surface-heading"><div><span>LIVE TRAJECTORY</span><h2>{currentRoom.title}</h2></div><button on:click={() => { const snapshot = actions.inspectProgress(); log('inspect_progress', 'console', `Mastery ${snapshot.masteryScore}% · ${snapshot.progress}% run`, 'read'); }}>Refresh snapshot</button></div>
             <div class="state-matrix">
               <div><small>MASTERY</small><strong>{belief}%</strong></div>
               <div><small>RUN DEPTH</small><strong>{clearedStageCount}/{stageCount}</strong></div>
@@ -921,7 +1039,7 @@
           </section>
 
           <section class="surface-card calls-card">
-            <div class="surface-heading"><div><span>RECENT ACTIVITY</span><h2>WebMCP + learner events</h2></div><b>{activity.length}</b></div>
+            <div class="surface-heading"><div><span>SHARED EVENT LOG</span><h2>WebMCP + learner activity</h2></div><b>{activity.length}</b></div>
             <div class="call-list">
               {#each activity.slice(0, 8) as item}
                 <div><span class={`call-dot ${item.kind}`}></span><section><code>{item.tool}</code><p>{item.result}</p><small>{item.args}</small></section></div>
@@ -932,12 +1050,12 @@
           </section>
         </div>
 
-        <section class="tool-grid">
-          {#each toolCatalog as tool}
+        <section class="tool-grid tool-strip">
+          {#each toolCatalog as tool, index}
             <article class="tool-card" class:registered={exposedTools.includes(tool.name)}>
-              <header><code>{tool.name}</code><span>{tool.mode}</span></header>
+              <header><span class="tool-index">0{index + 1}</span><code>{tool.name}</code><span>{tool.mode}</span></header>
               <p>{tool.description}</p>
-              <footer><i></i>{exposedTools.includes(tool.name) ? 'Registered now' : webmcpNative ? 'Synchronizing' : 'Available when WebMCP is present'}</footer>
+              <footer><i></i>{exposedTools.includes(tool.name) ? 'Registered now' : webmcpNative ? 'Synchronizing' : 'Available in a WebMCP-capable browser'}</footer>
             </article>
           {/each}
         </section>

@@ -18,17 +18,28 @@
 </script>
 
 <header class="hud">
-  <div class="nav-actions">
-    <button class="vault" on:click={onVault}>◇ Vault</button>
+  <div class="run-nav">
+    <button class="vault-brand" on:click={onVault} aria-label="Return to Expedition Vault">
+      <img src="/assets/vault-crest.webp" alt="" />
+      <span><b>0x1 Vault</b><small>Expedition run</small></span>
+    </button>
     <button class="map" on:click={onMap}>← Map</button>
   </div>
-  <div class="context"><small>{packTitle}{partProgress ? ` · checkpoint ${partProgress}` : ''}</small><strong>{roomTitle}</strong></div>
+
+  <div class="context">
+    <small>{packTitle}</small>
+    <strong>{roomTitle}</strong>
+    {#if partProgress}<em>Checkpoint {partProgress}</em>{/if}
+  </div>
+
   <BeliefMeter value={belief} {threshold} delta={beliefDelta} />
+
   <div class="right">
-    <span>{progress} rooms{partProgress ? ` · part ${partProgress}` : ''}</span>
-    <b>{time}</b>
+    <div class="depth"><span>RUN DEPTH</span><b>{progress}</b><small>stages</small></div>
+    <div class="clock"><span>ELAPSED</span><b>{time}</b><small>{runPercent}% clear</small></div>
     <i><em></em> RUN LIVE</i>
   </div>
+
   <div class="run-progress" title={`${runPercent}% of expedition cleared`}>
     <div class="run-fill" style={`width:${runPercent}%`}></div>
     {#each Array(totalRooms) as _, index}
@@ -38,5 +49,11 @@
 </header>
 
 <style>
-  .hud{height:74px;display:grid;grid-template-columns:auto minmax(180px,1fr) minmax(280px,430px) auto;align-items:center;gap:22px;padding:0 22px;background:rgba(7,11,20,.97);border-bottom:1px solid rgba(148,163,184,.18);position:sticky;top:0;z-index:40;backdrop-filter:blur(18px);font-family:Inter,system-ui,sans-serif}.nav-actions{display:flex;align-items:center;gap:7px}.map,.vault{border:1px solid rgba(148,163,184,.22);background:#101827;color:#cbd5e1;border-radius:9px;padding:10px 12px;font:700 9px Inter,sans-serif;cursor:pointer;white-space:nowrap}.vault{background:#17152a;border-color:rgba(129,117,235,.3);color:#bbb4ff}.map:hover,.vault:hover{border-color:#8175eb;color:#fff}.context{display:flex;flex-direction:column;min-width:0}.context small{font-size:8px;color:#6f7c90;letter-spacing:.11em;text-transform:uppercase}.context strong{font-size:13px;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}.right{display:grid;grid-template-columns:auto auto;gap:3px 11px;text-align:right;align-items:center}.right span,.right i{font-size:8px;color:#718096;font-style:normal}.right b{font-size:14px;color:#f8fafc}.right i{grid-column:1/-1;color:#9ba8bb}.right em{display:inline-block;width:6px;height:6px;border-radius:50%;background:#31b989;margin-right:5px;box-shadow:0 0 10px rgba(49,185,137,.6)}.run-progress{position:absolute;left:0;right:0;bottom:4px;height:3px;background:#222b3a}.run-fill{height:100%;background:linear-gradient(90deg,#6254dd,#9488f4);box-shadow:0 0 12px rgba(126,111,235,.26);transition:width .3s ease}.run-progress>span{position:absolute;top:50%;width:8px;height:8px;transform:translate(-50%,-50%);border:1px solid #465166;border-radius:50%;background:#0b1020}.run-progress>span.done{border-color:#9186ef;background:#9186ef}@media(max-width:880px){.context{display:none}.hud{grid-template-columns:auto 1fr auto}}@media(max-width:600px){.hud{height:auto;padding:10px 12px;gap:10px}.right{display:none}}
+  .hud{height:74px;display:grid;grid-template-columns:220px minmax(190px,1fr) minmax(300px,410px) 190px;align-items:center;gap:20px;padding:0 22px;background:rgba(7,11,20,.975);border-bottom:1px solid rgba(148,163,184,.17);position:sticky;top:0;z-index:40;backdrop-filter:blur(20px);font-family:Inter,system-ui,sans-serif;box-shadow:0 10px 28px rgba(0,0,0,.16)}
+  .run-nav{display:flex;align-items:center;gap:7px}.vault-brand{display:grid;grid-template-columns:30px 1fr;align-items:center;gap:8px;border:1px solid rgba(145,134,239,.22);background:#111628;color:#f8fafc;border-radius:10px;padding:6px 9px;cursor:pointer;text-align:left;min-width:134px}.vault-brand:hover,.map:hover{border-color:#8175eb;background:#17162a}.vault-brand img{width:28px;height:28px;object-fit:contain}.vault-brand span b,.vault-brand span small{display:block}.vault-brand span b{font-size:9px;letter-spacing:-.01em}.vault-brand span small{margin-top:1px;font-size:6px;color:#758196}.map{border:1px solid rgba(148,163,184,.2);background:#0f1726;color:#aeb8c8;border-radius:9px;padding:10px 11px;font:700 8px Inter,sans-serif;cursor:pointer;white-space:nowrap}
+  .context{display:flex;flex-direction:column;min-width:0}.context small{font-size:7px;color:#69768a;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.context strong{margin-top:2px;font-size:13px;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.context em{margin-top:2px;color:#9086df;font-size:7px;font-style:normal;font-weight:750}
+  .right{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;align-items:end;text-align:right}.depth,.clock{min-width:0}.depth span,.clock span,.depth small,.clock small{display:block}.depth span,.clock span{font-size:6px;letter-spacing:.1em;color:#657286;font-weight:800}.depth b,.clock b{display:inline-block;margin-top:2px;font-size:13px;color:#f8fafc}.depth small,.clock small{margin-top:1px;font-size:6px;color:#69768a}.right>i{grid-column:1/-1;color:#8e9aae;font-size:7px;font-style:normal}.right>i em{display:inline-block;width:6px;height:6px;border-radius:50%;background:#31b989;margin-right:5px;box-shadow:0 0 10px rgba(49,185,137,.65)}
+  .run-progress{position:absolute;left:0;right:0;bottom:3px;height:3px;background:#222b3a}.run-fill{height:100%;background:linear-gradient(90deg,#6254dd,#9488f4);box-shadow:0 0 12px rgba(126,111,235,.26);transition:width .3s ease}.run-progress>span{position:absolute;top:50%;width:8px;height:8px;transform:translate(-50%,-50%);border:1px solid #465166;border-radius:50%;background:#0b1020}.run-progress>span.done{border-color:#9186ef;background:#9186ef;box-shadow:0 0 0 2px rgba(145,134,239,.08)}
+  @media(max-width:960px){.hud{grid-template-columns:auto 1fr minmax(240px,340px) auto}.vault-brand span{display:none}.vault-brand{min-width:auto;grid-template-columns:30px;padding:6px}.context{display:none}}
+  @media(max-width:680px){.hud{height:auto;padding:9px 10px 12px;gap:9px;grid-template-columns:auto 1fr}.right{display:none}.hud :global(.meter){min-width:0}.run-nav{grid-column:1}.hud :global(.meter){grid-column:2}.map{padding-inline:9px}}
 </style>
