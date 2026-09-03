@@ -12,3 +12,4 @@ build/
 .qa/
 .DS_Store
 *.log
+.vercel

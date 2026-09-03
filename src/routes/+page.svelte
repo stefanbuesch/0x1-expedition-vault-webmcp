@@ -690,18 +690,20 @@
 {:else}
   <div class="app-shell">
     <header class="topbar">
-      <button class="brand" on:click={goLibrary}>
-        <span class="brand-mark">◇</span>
-        <span><b>0x1 Expedition Vault</b><small>Learning Roguelike</small></span>
-      </button>
-      <nav class="primary-nav">
-        <button class:active={activeTab === 'library'} on:click={goLibrary}>Vault</button>
-        <button class:active={activeTab === 'classroom'} on:click={() => { upsertCurrentPack(); activeTab = 'classroom'; mode = 'map'; }}>Current Run</button>
-        <button class:active={activeTab === 'pack'} on:click={() => { upsertCurrentPack(); activeTab = 'pack'; }}>Pack Details</button>
-        <button class:active={activeTab === 'ingest'} on:click={() => { upsertCurrentPack(); activeTab = 'ingest'; }}>Forge</button>
-        <button class:active={activeTab === 'agent'} on:click={() => { upsertCurrentPack(); activeTab = 'agent'; }}>WebMCP</button>
-      </nav>
-      <button class:webmcp-live={webmcpNative} class="party-state webmcp-state" on:click={() => { upsertCurrentPack(); activeTab = 'agent'; }}><span></span><b>WebMCP</b>{webmcpNative ? `${exposedTools.length || 4} tools live` : '4 tools ready'}</button>
+      <div class="topbar-inner">
+        <button class="brand" on:click={goLibrary}>
+          <span class="brand-mark">◇</span>
+          <span><b>0x1 Expedition Vault</b><small>Learning Roguelike</small></span>
+        </button>
+        <nav class="primary-nav">
+          <button class:active={activeTab === 'library'} on:click={goLibrary}>Vault</button>
+          <button class:active={activeTab === 'classroom'} on:click={() => { upsertCurrentPack(); activeTab = 'classroom'; mode = 'map'; }}>Current Run</button>
+          <button class:active={activeTab === 'pack'} on:click={() => { upsertCurrentPack(); activeTab = 'pack'; }}>Pack Details</button>
+          <button class:active={activeTab === 'ingest'} on:click={() => { upsertCurrentPack(); activeTab = 'ingest'; }}>Forge</button>
+          <button class:active={activeTab === 'agent'} on:click={() => { upsertCurrentPack(); activeTab = 'agent'; }}>WebMCP</button>
+        </nav>
+        <button class:webmcp-live={webmcpNative} class="party-state webmcp-state" on:click={() => { upsertCurrentPack(); activeTab = 'agent'; }}><span></span><b>WebMCP</b>{webmcpNative ? `${exposedTools.length || 4} tools live` : '4 tools ready'}</button>
+      </div>
     </header>
 
     {#if activeTab === 'library'}
@@ -722,7 +724,14 @@
           <div class="forge-copy">
             <span>KNOWLEDGE PACK FORGE</span>
             <h1>Turn any source into a playable expedition.</h1>
-            <p>Topic, YouTube lecture, public article/PDF URL, pasted notes, markdown, or a PDF/text upload. The source is extracted into one branching run state shared by the learner and WebMCP agents.</p>
+            <p>Topic, YouTube lecture, public article/PDF URL, pasted notes, markdown, or a PDF/text upload. The source becomes one branching run state shared by the learner and WebMCP.</p>
+            <div class="forge-source-grid">
+              <div><i>▶</i><span><b>YouTube</b><small>Video + public transcript</small></span></div>
+              <div><i>↗</i><span><b>Web</b><small>Article or public PDF URL</small></span></div>
+              <div><i>▤</i><span><b>Files</b><small>PDF · TXT · Markdown</small></span></div>
+              <div><i>¶</i><span><b>Notes</b><small>Paste raw text or a topic</small></span></div>
+            </div>
+            <div class="forge-pipeline"><span>EXTRACT</span><i></i><span>MODEL</span><i></i><span>BRANCH</span><i></i><span>PROVE</span></div>
           </div>
           <div class="forge-form">
             <label>Topic or course title<input bind:value={ingestTitle} placeholder="e.g. Plate tectonics" /></label>
