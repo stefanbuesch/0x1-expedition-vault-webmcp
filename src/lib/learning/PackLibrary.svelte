@@ -63,7 +63,7 @@
           <h2>{active.title}</h2>
           <p>{active.goal}</p>
           <div class="continue-actions">
-            <button class="primary" on:click={() => onOpen(active.id)}>{active.progress >= 100 ? 'Review completed run →' : 'Resume expedition →'}</button>
+            <button class="primary" on:click={() => onOpen(active.id)}>{active.progress >= 100 ? 'Review completed run →' : `Resume · ${active.currentRoomTitle} →`}</button>
             <span>{active.stageCleared}/{active.stageCount} stages · {active.roomsCleared}/{active.roomCount} rooms</span>
           </div>
         </div>
