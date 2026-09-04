@@ -1,5 +1,17 @@
 # WebMCP Challenge Submission — 0x1 Expedition Vault
 
+**Live app:** https://webmcp-app.vercel.app
+
+**Public source:** https://github.com/stefanbuesch/0x1-expedition-vault-webmcp
+
+## 60-second judge path
+
+1. Open **Expeditions** and enter the current Lenz's Law cognition room.
+2. Open **WebMCP** and verify the four native tools registered through `document.modelContext`.
+3. Call `inspect_progress`, then `explore_module` on an available room; the learner UI moves into the same room.
+4. Call `submit_solution` on a non-video checkpoint; the same semantic evaluator used by the human UI accepts/rejects it and updates the visible run.
+5. Use `ingest_learning_material` (or the inline URL Forge) to replace the active run with an 8-room / 6-stage source-grounded expedition while preserving it in the Vault.
+
 ## One-line pitch
 
 Turn any source into a branching learning roguelike where a human and a browser agent share one live expedition state through WebMCP.

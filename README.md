@@ -2,6 +2,10 @@
 
 0x1 Expedition Vault turns source material into a branching learning expedition that a human and a browser agent can run together.
 
+[![0x1 Expedition Vault — live expedition interface](./docs/expedition-vault.webp)](https://webmcp-app.vercel.app)
+
+**Live app:** https://webmcp-app.vercel.app
+
 The central idea is deliberately WebMCP-native: the learner UI and the browser agent do **not** maintain separate copies of the course. The page registers structured tools on `document.modelContext`; those tools read and mutate the same room graph, checkpoint index, mastery/belief trajectory, source provenance, and run state visible on screen.
 
 ## Why WebMCP
