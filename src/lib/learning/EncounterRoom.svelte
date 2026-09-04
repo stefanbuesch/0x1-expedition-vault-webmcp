@@ -1,6 +1,7 @@
 <script>
   // @ts-nocheck
   import RoomCompletePhase from './RoomCompletePhase.svelte';
+  import { evaluateTextCheckpoint } from './evaluation.js';
 
   export let room;
   export let belief = 60;
@@ -52,24 +53,6 @@
     return '/assets/vault-crest.webp';
   }
 
-  function normalize(text) {
-    return String(text || '').toLowerCase().replace(/[–—]/g, '-');
-  }
-
-  function scoreText(text) {
-    const source = normalize(text);
-    if (!expected.length) {
-      const words = source.trim().split(/\s+/).filter(Boolean).length;
-      return Math.min(1, words / (isBoss ? 65 : 35));
-    }
-    let hits = 0;
-    expected.forEach((term) => {
-      const tokens = normalize(term).split(/[^a-z0-9-]+/).filter((token) => token.length > 3);
-      if (tokens.some((token) => source.includes(token))) hits += 1;
-    });
-    return hits / expected.length;
-  }
-
   function checkpointReward() {
     const configured = Number(part?.beliefDelta);
     if (Number.isFinite(configured)) return configured;
@@ -108,16 +91,21 @@
 
   function submitText() {
     if (!answer.trim()) return;
-    const score = scoreText(answer);
-    const success = score >= (isBoss ? 0.66 : 0.5);
+    const outcome = evaluateTextCheckpoint({
+      text: answer,
+      expected,
+      type,
+      roomId: room?.refId || '',
+      isBoss
+    });
     const reward = checkpointReward();
-    const delta = success ? reward : -Math.max(4, Math.round(reward * .8));
+    const delta = outcome.success ? reward : -Math.max(4, Math.round(reward * .8));
     finish(
-      success,
+      outcome.success,
       delta,
-      success
-        ? `Causal coverage ${(score * 100).toFixed(0)}%. Route evidence accepted.`
-        : `Coverage ${(score * 100).toFixed(0)}%. The corridor stays closed until the missing causal links are repaired.`
+      outcome.success
+        ? `${outcome.detail} Route evidence accepted.`
+        : `${outcome.detail} The corridor stays closed until the missing causal links are repaired.`
     );
   }
 
@@ -237,13 +225,13 @@
         {#if cognitionCheck?.sourceHidden}
           <div class="blind-check"><span>BLIND TRANSFER</span><p>The source answer is intentionally hidden here. Solve from the model you learned, not from copied wording.</p></div>
         {/if}
-        {#if part.hint}
+        {#if part.hint && !cognitionCheck?.sourceHidden}
           <div class="intel"><span>INTEL</span><p>{part.hint}</p></div>
         {/if}
-        {#if part.probes}
+        {#if part.probes && !cognitionCheck?.sourceHidden}
           <div class="probe-list"><span>PRESSURE PROBES</span>{#each part.probes as probe}<p>› {probe}</p>{/each}</div>
         {/if}
-        {#if expected.length}
+        {#if expected.length && !cognitionCheck?.sourceHidden}
           <div class="rubric">
             <span>{isBoss ? 'BOSS RUBRIC' : 'TARGET CONCEPTS'}</span>
             <div>{#each expected as item}<b>□ {item}</b>{/each}</div>

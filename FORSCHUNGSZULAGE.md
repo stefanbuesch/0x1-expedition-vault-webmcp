@@ -11,3 +11,9 @@ I kept the browser agent and learner on one lived run state. WebMCP tool schemas
 I hardened source ingestion without weakening the product claim: response bodies are stream-limited, private/reserved network ranges and credential-bearing URLs are rejected, serverless PDF extraction is native to the deployment, and image-only PDFs fail explicitly instead of silently generating from empty text. YouTube transcript use remains opportunistic; metadata fallback is explicit when datacenter caption access is blocked.
 
 Measured production-preview state for this pass: roughly 471 KB total resource transfer at DPR 1 before the final density/locked-art refinements, about 648 ms local LCP, and zero Svelte diagnostics. The cognition contract remains unchanged: generic answers are rejected and source-grounded causal answers visibly advance checkpoints.
+
+## 2026-09-04 07:07:50 CEST
+
+I removed a legacy completion shortcut that treated answer length as evidence when a text checkpoint had no semantic targets. I consolidated human and WebMCP text evaluation into one shared semantic evaluator so both paths now apply the same target coverage, language-production, and causal-reasoning criteria.
+
+I added hidden causal targets to the bundled Lenz dialogue and changed source-hidden cognition checks so the learner sees neither the scoring rubric nor source-specific hints/probes before answering. I verified the intended asymmetry directly: causal-sounding verbose nonsense scores 0% and is rejected, while a mechanism-grounded Lenz explanation scores 100% and clears the room. The same reject/pass behavior was verified through the registered WebMCP submit_solution tool.

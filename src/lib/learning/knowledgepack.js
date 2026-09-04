@@ -51,7 +51,9 @@ export const MOTOR_SYSTEMS_PACK = {
       part: {
         type: 'dialogue',
         question: 'I claim the induced current helps the magnetic-flux change that created it. Refute me in two steps.',
-        probes: ['What would happen to energy conservation if induction reinforced the change?', 'Apply the direction rule to the motor’s back-EMF.']
+        expected: ['induced current opposes magnetic-flux change', 'reinforcing the change would violate energy conservation', 'back-EMF opposes the change that produces it'],
+        probes: ['What would happen to energy conservation if induction reinforced the change?', 'Apply the direction rule to the motor’s back-EMF.'],
+        cognitionCheck: { kind: 'causal contradiction', sourceHidden: true }
       }
     },
     {

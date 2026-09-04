@@ -4,6 +4,7 @@
   import { cloneKnowledgePack } from '$lib/learning/knowledgepack.js';
   import { generateKnowledgePackFromMaterial, extractYoutubeVideoId } from '$lib/learning/ingestion.js';
   import { createLearningWebMCP } from '$lib/learning/webmcp.js';
+  import { evaluateTextCheckpoint } from '$lib/learning/evaluation.js';
   import DungeonMap from '$lib/learning/DungeonMap.svelte';
   import EncounterRoom from '$lib/learning/EncounterRoom.svelte';
   import RunHUD from '$lib/learning/RunHUD.svelte';
@@ -435,21 +436,13 @@
       const ok = text === letter || text === String(targetPart.correctIndex) || text.includes(correct.slice(0, Math.min(26, correct.length)));
       return { success: ok, score: ok ? 1 : 0, detail: ok ? targetPart.explanation : 'The answer failed this checkpoint.' };
     }
-    const expected = targetPart.expected || targetPart.checklist || [];
-    if (!expected.length) {
-      const words = text.split(/\s+/).filter(Boolean).length;
-      const score = Math.min(1, words / (room.nodeType === 'boss' ? 70 : 34));
-      return { success: score >= 0.68, score, detail: `Mechanism depth ${Math.round(score * 100)}%.` };
-    }
-    let hits = 0;
-    for (const item of expected) {
-      const tokens = String(item).toLowerCase().split(/[^a-z0-9-]+/).filter((token) => token.length > 3);
-      if (tokens.some((token) => text.includes(token))) hits += 1;
-    }
-    const causalMarkers = (text.match(/\b(because|therefore|thus|causes?|leads?|results?|mechanism|evidence|predict|falsif)\w*/g) || []).length;
-    const score = expected.length ? hits / expected.length : 0;
-    const requiresCausality = ['dialogue', 'case-study', 'boss'].includes(targetPart.type) || room.nodeType === 'boss' || room.refId.includes('causal') || room.refId.includes('transfer');
-    return { success: score >= 0.6 && (!requiresCausality || causalMarkers >= 1), score, detail: `Causal coverage ${Math.round(score * 100)}%.` };
+    return evaluateTextCheckpoint({
+      text: solution,
+      expected: targetPart.expected || targetPart.checklist || [],
+      type: targetPart.type,
+      roomId: room.refId,
+      isBoss: room.nodeType === 'boss'
+    });
   }
 
   function partReward(room, part) {
