@@ -8,7 +8,7 @@ export const MOTOR_SYSTEMS_PACK = {
   maxStrikes: 3,
   rooms: [
     {
-      refId: 'field-lines', title: 'Field Lines', subtitle: 'The geometry of force', nodeType: 'video', status: 'available', map: { row: 0, column: 0 },
+      refId: 'field-lines', title: 'Field Lines', subtitle: 'The geometry of force', nodeType: 'video', status: 'available', map: { row: 0, column: 0, presentation: { x: 292, y: 160 } },
       mastery: 72, beliefDelta: 4, glyph: 'Φ',
       edges: [{ targetRefId: 'faraday', type: 'NEXT' }],
       part: {
@@ -19,7 +19,7 @@ export const MOTOR_SYSTEMS_PACK = {
       }
     },
     {
-      refId: 'faraday', title: 'Faraday Induction', subtitle: 'Motion writes voltage', nodeType: 'quiz', status: 'locked', map: { row: 1, column: 0 },
+      refId: 'faraday', title: 'Faraday Induction', subtitle: 'Motion writes voltage', nodeType: 'quiz', status: 'locked', map: { row: 1, column: 0, presentation: { x: 407, y: 195 } },
       mastery: 38, beliefDelta: 6, glyph: '∂',
       edges: [
         { targetRefId: 'back-emf', type: 'NEXT' },
@@ -32,7 +32,7 @@ export const MOTOR_SYSTEMS_PACK = {
       }
     },
     {
-      refId: 'back-emf', title: 'Back-EMF', subtitle: 'The motor fights back', nodeType: 'recall', status: 'locked', map: { row: 2, column: -1 },
+      refId: 'back-emf', title: 'Back-EMF', subtitle: 'The motor fights back', nodeType: 'recall', status: 'locked', map: { row: 2, column: -1, presentation: { x: 514, y: 99 } },
       mastery: 21, beliefDelta: 9, glyph: '↯',
       edges: [
         { targetRefId: 'motor-load', type: 'GATE' },
@@ -46,7 +46,7 @@ export const MOTOR_SYSTEMS_PACK = {
       }
     },
     {
-      refId: 'lenz-law', title: "Lenz's Law", subtitle: 'Opposition has a direction', nodeType: 'dialogue', status: 'locked', map: { row: 3, column: 1 },
+      refId: 'lenz-law', title: "Lenz's Law", subtitle: 'Opposition has a direction', nodeType: 'dialogue', status: 'locked', map: { row: 3, column: 1, presentation: { x: 669, y: 165 } },
       mastery: 18, beliefDelta: 8, glyph: '↺',
       edges: [{ targetRefId: 'motor-load', type: 'GATE' }],
       part: {
@@ -58,7 +58,7 @@ export const MOTOR_SYSTEMS_PACK = {
       }
     },
     {
-      refId: 'motor-load', title: 'Motor Under Load', subtitle: 'Boss: causal systems test', nodeType: 'boss', status: 'locked', map: { row: 4, column: 0 },
+      refId: 'motor-load', title: 'Motor Under Load', subtitle: 'Boss: causal systems test', nodeType: 'boss', status: 'locked', map: { row: 4, column: 0, presentation: { x: 615, y: 250 } },
       mastery: 8, beliefDelta: 14, glyph: '⚙',
       edges: [{ targetRefId: 'commutation', type: 'NEXT' }],
       part: {
@@ -75,7 +75,7 @@ export const MOTOR_SYSTEMS_PACK = {
       }
     },
     {
-      refId: 'commutation', title: 'Commutation', subtitle: 'Unlocked after the boss', nodeType: 'video', status: 'locked', map: { row: 5, column: 0 },
+      refId: 'commutation', title: 'Commutation', subtitle: 'Unlocked after the boss', nodeType: 'video', status: 'locked', map: { row: 5, column: 0, presentation: { x: 850, y: 220 } },
       mastery: 0, beliefDelta: 5, glyph: '◇',
       edges: [],
       part: {
