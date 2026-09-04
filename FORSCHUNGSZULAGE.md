@@ -17,3 +17,9 @@ Measured production-preview state for this pass: roughly 471 KB total resource t
 I removed a legacy completion shortcut that treated answer length as evidence when a text checkpoint had no semantic targets. I consolidated human and WebMCP text evaluation into one shared semantic evaluator so both paths now apply the same target coverage, language-production, and causal-reasoning criteria.
 
 I added hidden causal targets to the bundled Lenz dialogue and changed source-hidden cognition checks so the learner sees neither the scoring rubric nor source-specific hints/probes before answering. I verified the intended asymmetry directly: causal-sounding verbose nonsense scores 0% and is rejected, while a mechanism-grounded Lenz explanation scores 100% and clears the room. The same reject/pass behavior was verified through the registered WebMCP submit_solution tool.
+
+## 2026-09-04 07:14:43 CEST
+
+I tightened source-hidden cognition checks against prompt leakage. Source-text concept extraction now ignores course-title tokens when real source material exists, so scoring targets reflect mechanisms and evidence rather than the label of the course. For source-hidden checkpoints, the evaluator removes target tokens already present in the question before calculating coverage; restating the prompt therefore earns no hidden-target credit.
+
+I tested every hidden stage in generated Feedback Control and Plate Tectonics packs. A verbose answer made from the prompt plus causal-sounding filler failed every hidden checkpoint, while answers containing learned source concepts plus causal/falsification structure passed every hidden checkpoint. This keeps the challenges solvable without exposing their answer key.

@@ -44,7 +44,7 @@ Tool registration follows the pack/module schema rather than every transient sta
 
 ## What makes the learning loop different
 
-The generated curriculum deliberately separates study from cognition checks. Later stages hide source answers and test retrieval, causal intervention, source-vs-inference separation, blind transfer, falsification discrimination, adversarial prediction, boundary retrieval, and integrative defense. Source-hidden checks do not render their semantic rubric or source-specific hints before submission, and human/WebMCP text answers pass through the same evaluator so length alone cannot clear a checkpoint.
+The generated curriculum deliberately separates study from cognition checks. Later stages hide source answers and test retrieval, causal intervention, source-vs-inference separation, blind transfer, falsification discrimination, adversarial prediction, boundary retrieval, and integrative defense. Source-hidden checks do not render their semantic rubric or source-specific hints before submission; scoring also discounts target terms already supplied by the question. Human/WebMCP text answers pass through the same evaluator, so verbosity or prompt restatement cannot clear a checkpoint.
 
 ## Judge testing
 

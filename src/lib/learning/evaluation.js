@@ -12,7 +12,7 @@ function targetTokens(target = '') {
   return [...new Set(normalize(target).split(/[^a-z0-9-]+/).filter((token) => token.length > 3))];
 }
 
-export function evaluateTextCheckpoint({ text = '', expected = [], type = 'recall', roomId = '', isBoss = false } = {}) {
+export function evaluateTextCheckpoint({ text = '', expected = [], prompt = '', type = 'recall', roomId = '', isBoss = false, sourceHidden = false } = {}) {
   const source = normalize(text);
   if (!source) return { success: false, configured: true, score: 0, wordCount: 0, causalMarkers: 0, detail: 'Empty solution refused.' };
 
@@ -28,12 +28,29 @@ export function evaluateTextCheckpoint({ text = '', expected = [], type = 'recal
     };
   }
 
-  const targetScores = targets.map((target) => {
+  const promptTokens = new Set(targetTokens(prompt));
+  const targetScores = [];
+  for (const target of targets) {
     const tokens = targetTokens(target);
-    if (!tokens.length) return source.includes(normalize(target)) ? 1 : 0;
-    const hits = tokens.filter((token) => source.includes(token)).length;
-    return hits / tokens.length;
-  });
+    if (!tokens.length) {
+      if (!sourceHidden) targetScores.push(source.includes(normalize(target)) ? 1 : 0);
+      continue;
+    }
+    const scoringTokens = sourceHidden ? tokens.filter((token) => !promptTokens.has(token)) : tokens;
+    if (!scoringTokens.length) continue;
+    const hits = scoringTokens.filter((token) => source.includes(token)).length;
+    targetScores.push(hits / scoringTokens.length);
+  }
+  if (!targetScores.length) {
+    return {
+      success: false,
+      configured: false,
+      score: 0,
+      wordCount: source.split(/\s+/).filter(Boolean).length,
+      causalMarkers: 0,
+      detail: sourceHidden ? 'Hidden checkpoint has no novel semantic targets; completion refused.' : 'Checkpoint has no scorable semantic targets; completion refused.'
+    };
+  }
   const score = targetScores.reduce((sum, value) => sum + value, 0) / targetScores.length;
   const wordCount = source.split(/\s+/).filter(Boolean).length;
   const causalMarkers = (source.match(/\b(because|therefore|thus|causes?|caused|leads?|led|results?|resulted|mechanism|evidence|predict|falsif|opposes?|reinforc|consequen)\w*/g) || []).length;

@@ -47,13 +47,18 @@ function sentences(text) {
 
 function keywordRows(text, title) {
   const counts = new Map();
-  const source = `${title} ${text}`.toLowerCase().match(/[a-zà-ž][a-zà-ž0-9-]{2,}/gi) || [];
+  const titleTokens = new Set((String(title).toLowerCase().match(/[a-zà-ž][a-zà-ž0-9-]{2,}/gi) || []).map((token) => token.toLowerCase()));
+  const bodyTokens = String(text).toLowerCase().match(/[a-zà-ž][a-zà-ž0-9-]{2,}/gi) || [];
+  const source = bodyTokens.length ? bodyTokens : [...titleTokens];
   for (const token of source) {
     const word = token.toLowerCase();
     if (STOP_WORDS.has(word) || /^https?$/.test(word)) continue;
+    if (bodyTokens.length && titleTokens.has(word)) continue;
     counts.set(word, (counts.get(word) || 0) + 1);
   }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0].length - a[0].length).slice(0, 10).map(([word]) => word);
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0].length - a[0].length).slice(0, 10).map(([word]) => word);
+  if (ranked.length) return ranked;
+  return [...titleTokens].filter((word) => !STOP_WORDS.has(word)).slice(0, 10);
 }
 
 function shorten(text, max = 190) {

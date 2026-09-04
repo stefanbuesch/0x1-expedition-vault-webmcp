@@ -94,9 +94,11 @@
     const outcome = evaluateTextCheckpoint({
       text: answer,
       expected,
+      prompt: part.question || part.prompt || part.title || '',
       type,
       roomId: room?.refId || '',
-      isBoss
+      isBoss,
+      sourceHidden: Boolean(cognitionCheck?.sourceHidden)
     });
     const reward = checkpointReward();
     const delta = outcome.success ? reward : -Math.max(4, Math.round(reward * .8));

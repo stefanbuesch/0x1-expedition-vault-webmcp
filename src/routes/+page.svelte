@@ -439,9 +439,11 @@
     return evaluateTextCheckpoint({
       text: solution,
       expected: targetPart.expected || targetPart.checklist || [],
+      prompt: targetPart.question || targetPart.prompt || targetPart.title || '',
       type: targetPart.type,
       roomId: room.refId,
-      isBoss: room.nodeType === 'boss'
+      isBoss: room.nodeType === 'boss',
+      sourceHidden: Boolean(targetPart.cognitionCheck?.sourceHidden)
     });
   }
 
