@@ -29,3 +29,9 @@ I tested every hidden stage in generated Feedback Control and Plate Tectonics pa
 I ran a production-oriented Lighthouse audit after freezing the runtime. The baseline scored 100 performance, 100 best practices, 100 SEO, and 95 accessibility. I traced the accessibility loss to compact microcopy contrast and ARIA names that overrode visible map/badge labels.
 
 I darkened only the affected compact text states, removed mismatched map-node aria-label overrides, and included visible badge numbers in the concept-master accessible names. A clean local Lighthouse accessibility rerun then scored 100, with both color-contrast and label-content-name-mismatch audits fully passing. I kept the visual hierarchy and first-viewport density unchanged.
+
+## 2026-09-04 07:55:48 CEST
+
+I optimized the remaining image-delivery waste without degrading the expedition art. I added 96px 1x variants for map/concept badges and the reward chest while preserving the existing high-density files through srcset for Retina displays. I also tightened the 1400px map WebP from Q90 to Q88 only after visual inspection and SSIM comparison.
+
+In the browser, DPR1 expedition media dropped to roughly 276 KB while DPR2 continued to receive the high-density originals. Lighthouse then reported both responsive-image and image-delivery audits as fully passing. A 1600x1000 visual QA render kept the supplied reference composition and icon sharpness intact.

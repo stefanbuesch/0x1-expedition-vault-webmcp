@@ -103,6 +103,10 @@
     if (index === 3) return '/assets/scales.webp';
     return '/assets/gear.webp';
   }
+
+  function smallIconFor(room, index) {
+    return iconFor(room, index).replace('.webp', '-96.webp');
+  }
 </script>
 
 <section class="board" aria-label="Interactive expedition map">
@@ -129,13 +133,13 @@
       disabled={state === 'locked'}
       on:click={() => onRoomClick(node.room.refId)}
     >
-      <span class="node-orb"><img src={iconFor(node.room, index)} alt="" /></span>
+      <span class="node-orb"><img src={smallIconFor(node.room, index)} srcset={`${smallIconFor(node.room, index)} 1x, ${iconFor(node.room, index)} 2x`} alt="" /></span>
       <strong>{node.room.title}</strong>
       <small>{state === 'cleared' ? 'Mastered' : state === 'locked' ? 'Locked' : state === 'available' && mapClearedStageCount >= mapStageCount ? 'Optional lane · replayable' : state === 'available' && liveChoices.length > 1 ? 'Available path' : node.room.subtitle || node.room.nodeType}</small>
     </button>
   {/each}
 
-  <img class="reward reward-chest" src="/assets/reward-chest.webp" alt="" aria-hidden="true" decoding="async" fetchpriority="low" />
+  <img class="reward reward-chest" src="/assets/reward-chest-96.webp" srcset="/assets/reward-chest-96.webp 1x, /assets/reward-chest.webp 2x" alt="" aria-hidden="true" decoding="async" fetchpriority="low" />
   <img class="reward reward-relic" src="/assets/relic-red.webp" alt="" aria-hidden="true" decoding="async" fetchpriority="low" />
 
   <div class="board-stats">

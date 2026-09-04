@@ -181,6 +181,10 @@
     return '/assets/vault-crest.webp';
   }
 
+  function roomBadgeSmall(room = {}) {
+    return roomBadge(room).replace('.webp', '-96.webp');
+  }
+
   function toolLabel(name = '') {
     return ({
       ingest_learning_material: 'Ingest Source',
@@ -762,7 +766,7 @@
   <title>0x1 Expedition Vault // {pack.title}</title>
   <meta name="description" content="An agent-native learning roguelike powered by WebMCP." />
   <meta name="theme-color" content="#f7f8fb" />
-  <link rel="icon" type="image/webp" href="/assets/vault-crest.webp" />
+  <link rel="icon" type="image/webp" href="/assets/vault-crest-96.webp" />
   <link rel="preload" as="image" href="/assets/expedition-map-1400.webp" imagesrcset="/assets/expedition-map-1400.webp 1x, /assets/expedition-map.webp 2x" fetchpriority="high" />
   <link rel="stylesheet" href="/vault.css" />
 </svelte:head>
@@ -802,7 +806,7 @@
     <header class="topbar">
       <div class="topbar-inner">
         <button class="brand" on:click={goLibrary}>
-          <span class="brand-mark"><img src="/assets/vault-crest.webp" alt="" /></span>
+          <span class="brand-mark"><img src="/assets/vault-crest-96.webp" srcset="/assets/vault-crest-96.webp 1x, /assets/vault-crest.webp 2x" alt="" /></span>
           <span><b>0x1 Expedition Vault</b><small>Learning Roguelike</small></span>
         </button>
         <nav class="primary-nav">
@@ -936,7 +940,7 @@
                   {@const done = cleared.includes(room.refId)}
                   {@const current = room.refId === currentRoomId}
                   <button class:done class:current class:locked={room.status === 'locked'} disabled={room.status === 'locked'} on:click={() => openRoom(room.refId)} aria-label={`${index + 1}. ${room.title}, ${done ? 'mastered' : current ? 'current' : room.status}`}>
-                    <span><img src={roomBadge(room)} alt="" loading="lazy" decoding="async" /></span>
+                    <span><img src={roomBadgeSmall(room)} srcset={`${roomBadgeSmall(room)} 1x, ${roomBadge(room)} 2x`} alt="" loading="lazy" decoding="async" /></span>
                     <small>{index + 1}</small>
                   </button>
                 {/each}
@@ -995,7 +999,7 @@
           </div>
           <aside class="pack-next-card">
             <span>NEXT ENCOUNTER</span>
-            <img src={roomBadge(navigationRooms[0] || currentRoom)} alt="" />
+            <img src={roomBadgeSmall(navigationRooms[0] || currentRoom)} srcset={`${roomBadgeSmall(navigationRooms[0] || currentRoom)} 1x, ${roomBadge(navigationRooms[0] || currentRoom)} 2x`} alt="" />
             <h3>{navigationRooms[0]?.title || currentRoom.title}</h3>
             <p>{overallProgress >= 100 ? 'Main path cleared. Review any optional lane.' : `${belief}% belief · stage ${Math.min(stageCount, currentStage + 1)} of ${stageCount}`}</p>
             <button on:click={() => activeTab = 'classroom'}>{overallProgress >= 100 ? 'Review map →' : 'Continue run →'}</button>
@@ -1033,7 +1037,7 @@
               {@const parts = Array.isArray(room.parts) && room.parts.length ? room.parts : [room.part].filter(Boolean)}
               <article class:cleared={cleared.includes(room.refId)} class:current={room.refId === currentRoomId} class:locked={room.status === 'locked'} class="topology-room-card">
                 <header>
-                  <div class="topology-room-icon"><img src={roomBadge(room)} alt="" loading="lazy" decoding="async" /></div>
+                  <div class="topology-room-icon"><img src={roomBadgeSmall(room)} srcset={`${roomBadgeSmall(room)} 1x, ${roomBadge(room)} 2x`} alt="" loading="lazy" decoding="async" /></div>
                   <div><span>STAGE {Number.isFinite(room.map?.row) ? room.map.row + 1 : index + 1}</span><b>{cleared.includes(room.refId) ? 'MASTERED' : room.status.toUpperCase()}</b></div>
                 </header>
                 <h3>{room.title}</h3>
@@ -1057,7 +1061,7 @@
 
         <section class="webmcp-hero-grid">
           <article class="surface-card webmcp-state-hero">
-            <div class="webmcp-state-art"><div></div><img src={roomBadge(currentRoom)} alt="" /></div>
+            <div class="webmcp-state-art"><div></div><img src={roomBadgeSmall(currentRoom)} srcset={`${roomBadgeSmall(currentRoom)} 1x, ${roomBadge(currentRoom)} 2x`} alt="" /></div>
             <div class="webmcp-state-copy">
               <span>ONE SHARED RUN STATE</span>
               <h2>{pack.title}</h2>
