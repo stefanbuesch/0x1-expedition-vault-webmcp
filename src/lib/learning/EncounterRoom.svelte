@@ -27,6 +27,7 @@
   let dialogueTurn = 0;
   let dialogueLog = [];
   let caseAnswers = {};
+  let activeCaseIndex = 0;
   let lastPartKey = '';
 
   $: parts = Array.isArray(room?.parts) && room.parts.length ? room.parts : [room?.part].filter(Boolean);
@@ -51,6 +52,7 @@
     { id: 'invariant', label: 'Invariant', prompt: 'What should remain stable?' },
     { id: 'falsifier', label: 'Falsifier', prompt: 'What observation would prove your prediction wrong?' }
   ]);
+  $: activeCaseField = caseFields[activeCaseIndex] || null;
   $: partKey = `${room?.refId || 'room'}:${currentPartIndex}:${part?.id || part?.type || 'part'}`;
   $: if (partKey !== lastPartKey) {
     lastPartKey = partKey;
@@ -64,6 +66,7 @@
     dialogueTurn = 0;
     dialogueLog = [];
     caseAnswers = {};
+    activeCaseIndex = 0;
   }
 
   function iconFor(value) {
@@ -339,10 +342,11 @@
         <div class="answer-heading"><span>MECHANISM PATH</span><small>{chainCount} required links</small></div>
         <div class="chain-stack">
           {#each Array(chainCount) as _, index}
-            <label class="chain-step">
-              <span>0{index + 1}</span>
-              <div><b>{index === 0 ? 'Initial change' : index === chainCount - 1 ? 'Observable consequence' : `Causal link ${index}`}</b><small>State what changes and why the next step follows.</small></div>
-              <input value={chainSteps[index] || ''} on:input={(event) => { chainSteps[index] = event.currentTarget.value; chainSteps = [...chainSteps]; }} placeholder="Explain this link…" />
+            <label class="chain-step" class:complete={Boolean(String(chainSteps[index] || '').trim())}>
+              <span class="chain-index">0{index + 1}</span>
+              <div class="chain-copy"><b>{index === 0 ? 'Initial change' : index === chainCount - 1 ? 'Observable consequence' : `Causal link ${index}`}</b><small>State what changes and why the next step follows.</small></div>
+              <textarea rows="2" value={chainSteps[index] || ''} on:input={(event) => { chainSteps[index] = event.currentTarget.value; chainSteps = [...chainSteps]; }} placeholder="Write the mechanism…"></textarea>
+              <i class="chain-state">{String(chainSteps[index] || '').trim() ? '✓' : '○'}</i>
             </label>
             {#if index < chainCount - 1}<i class="chain-arrow">↓</i>{/if}
           {/each}
@@ -354,19 +358,21 @@
   {:else if type === 'dialogue'}
     <section class="dialogue-room encounter-surface">
       <div class="opponent-panel">
-        <span class="eyebrow">ADVERSARIAL DIALOGUE</span>
-        <div class="turn-meter"><span>TURN {dialogueTurn + 1} / {expected.length > 1 ? 2 : 1}</span><b>Strike {strikes}/{maxStrikes}</b></div>
-        <blockquote>{dialogueTurn === 0 ? part.question : (part.probes?.[0] || 'Apply your principle to a concrete prediction. What follows?')}</blockquote>
+        <div class="dialogue-topline"><span class="eyebrow">ADVERSARIAL DIALOGUE</span><div class="turn-meter"><span>TURN {dialogueTurn + 1}/{expected.length > 1 ? 2 : 1}</span><b>{strikes}/{maxStrikes} strikes</b></div></div>
+        <div class="opponent-message"><img src={icon} alt="" /><div><span>OPPONENT</span><blockquote>{dialogueTurn === 0 ? part.question : (part.probes?.[0] || 'Apply your principle to a concrete prediction. What follows?')}</blockquote></div></div>
         {#if dialogueLog.length}
-          <div class="dialogue-log">{#each dialogueLog as item}<div><span>YOU · TURN {item.turn}</span><p>{item.text}</p></div>{/each}</div>
+          <div class="dialogue-log">{#each dialogueLog as item}<div><span>YOUR TURN {item.turn}</span><p>{item.text}</p></div>{/each}</div>
         {/if}
         {#if cognitionCheck?.sourceHidden}<div class="blind-check"><span>NO ANSWER KEY</span><p>The opponent knows the rubric; you do not. Win the exchange from the model you learned.</p></div>{/if}
       </div>
       <div class="dialogue-response">
-        <div class="answer-heading"><span>YOUR REBUTTAL</span><small>{Math.max(0, maxStrikes - strikes)} strikes remaining</small></div>
-        <textarea bind:value={answer} placeholder={dialogueTurn === 0 ? 'Refute the claim with an explicit causal argument…' : 'Answer the counter-pressure with a concrete consequence or prediction…'}></textarea>
+        <div class="composer-shell">
+          <div class="composer-head"><span>YOUR REBUTTAL</span><small>{Math.max(0, maxStrikes - strikes)} strikes remaining</small></div>
+          <textarea bind:value={answer} placeholder={dialogueTurn === 0 ? 'Refute the claim with an explicit causal argument…' : 'Answer the counter-pressure with a concrete consequence or prediction…'}></textarea>
+          <div class="composer-foot"><span>{answer.trim() ? `${answer.trim().split(/\s+/).length} words` : 'Build the argument, not the keyword list.'}</span><kbd>⌘ ↵</kbd></div>
+        </div>
         {#if feedback}<div class:negative={feedback.includes('takes the point') || feedback.includes('Missing') || feedback.includes('coverage 0')} class="feedback">{feedback}</div>{/if}
-        <div class="answer-footer"><span>{answer.trim() ? `${answer.trim().split(/\s+/).length} words` : 'No rebuttal committed'}</span><button class="primary" disabled={!answer.trim()} on:click={submitDialogueTurn}>{dialogueTurn === 0 && expected.length > 1 ? 'ANSWER OPPONENT →' : 'CLOSE THE ARGUMENT →'}</button></div>
+        <button class="primary dialogue-submit" disabled={!answer.trim()} on:click={submitDialogueTurn}>{dialogueTurn === 0 && expected.length > 1 ? 'ANSWER OPPONENT →' : 'CLOSE THE ARGUMENT →'}</button>
       </div>
     </section>
   {:else if type === 'case-study' || type === 'case_study' || type === 'boss' || isBoss}
@@ -378,14 +384,28 @@
         <div class="strike-panel danger"><span>{isBoss ? 'BOSS STAKES' : 'STRIKE RISK'}</span><b>{strikes} / {maxStrikes}</b><p>A failed board consumes one strike. Three strikes ends the expedition.</p></div>
       </div>
       <div class="systems-board">
-        <div class="answer-heading"><span>SYSTEM PREDICTIONS</span><small>{caseFields.length} coupled fields</small></div>
-        <div class="system-grid">
+        <div class="answer-heading"><span>SYSTEM PREDICTIONS</span><small>{caseFields.filter((field) => String(caseAnswers[field.id] || '').trim()).length}/{caseFields.length} committed</small></div>
+        <div class="system-tabs">
           {#each caseFields as field, index}
-            <label class="system-field"><span>0{index + 1}</span><b>{field.label}</b><small>{field.prompt}</small><textarea value={caseAnswers[field.id] || ''} on:input={(event) => caseAnswers = { ...caseAnswers, [field.id]: event.currentTarget.value }} placeholder="Commit prediction…"></textarea></label>
+            <button class:active={index === activeCaseIndex} class:complete={Boolean(String(caseAnswers[field.id] || '').trim())} on:click={() => activeCaseIndex = index}><span>0{index + 1}</span><b>{field.label}</b><i>{String(caseAnswers[field.id] || '').trim() ? '✓' : '○'}</i></button>
           {/each}
         </div>
+        {#if activeCaseField}
+          <section class="system-focus">
+            <div class="system-focus-label"><span>VARIABLE {String(activeCaseIndex + 1).padStart(2, '0')}</span><b>{activeCaseField.label}</b></div>
+            <h3>{activeCaseField.prompt}</h3>
+            <textarea value={caseAnswers[activeCaseField.id] || ''} on:input={(event) => caseAnswers = { ...caseAnswers, [activeCaseField.id]: event.currentTarget.value }} placeholder="Commit the prediction and explain why it follows…"></textarea>
+            <div class="system-nav">
+              <button class="ghost" disabled={activeCaseIndex === 0} on:click={() => activeCaseIndex = Math.max(0, activeCaseIndex - 1)}>← Previous</button>
+              {#if activeCaseIndex < caseFields.length - 1}
+                <button class="primary" disabled={!String(caseAnswers[activeCaseField.id] || '').trim()} on:click={() => activeCaseIndex = Math.min(caseFields.length - 1, activeCaseIndex + 1)}>LOCK VARIABLE · NEXT →</button>
+              {:else}
+                <button class="primary" disabled={caseFields.some((field) => !String(caseAnswers[field.id] || '').trim())} on:click={submitCaseBoard}>{isBoss ? 'COMMIT BOSS MODEL →' : 'RUN SIMULATION →'}</button>
+              {/if}
+            </div>
+          </section>
+        {/if}
         {#if feedback}<div class:negative={!feedback.includes('accepted')} class="feedback">{feedback}</div>{/if}
-        <div class="answer-footer"><span>{caseFields.filter((field) => String(caseAnswers[field.id] || '').trim()).length}/{caseFields.length} predictions committed</span><button class="primary" disabled={caseFields.some((field) => !String(caseAnswers[field.id] || '').trim())} on:click={submitCaseBoard}>{isBoss ? 'COMMIT BOSS MODEL →' : 'RUN SIMULATION →'}</button></div>
       </div>
     </section>
   {:else}
@@ -411,7 +431,9 @@
   .belief-ambient{position:absolute;left:0;right:0;bottom:0;height:4px;background:linear-gradient(90deg,#c8455f 0%,#d6a33a 42%,var(--accent-soft) var(--belief),rgba(51,65,85,.4) var(--belief));box-shadow:0 -10px 30px rgba(97,84,223,.13)}
   .cognition-check{display:flex;align-items:center;gap:7px;width:max-content;margin-top:9px;padding:5px 8px;border:1px solid rgba(145,134,239,.28);border-radius:999px;background:rgba(97,84,223,.08)}.cognition-check i{width:6px;height:6px;border-radius:50%;background:#9a8df6;box-shadow:0 0 10px rgba(154,141,246,.55)}.cognition-check span{font-size:12px;letter-spacing:.13em;color:#7f8ba0;font-weight:850}.cognition-check b{font-size:12px;color:#c1bbff;text-transform:uppercase;letter-spacing:.05em}.blind-check{margin:11px 0 0;padding:10px 11px;border:1px solid rgba(145,134,239,.22);border-left:3px solid #9186ef;border-radius:9px;background:rgba(97,84,223,.07)}.blind-check span{display:block;font-size:12px;letter-spacing:.12em;color:#a9a0ff;font-weight:850}.blind-check p{margin:5px 0 0;font-size:12px;line-height:1.5;color:#9aa7bb}
 
-  .chain-room,.dialogue-room,.case-room{display:grid;grid-template-columns:minmax(360px,.82fr) minmax(0,1.18fr);min-height:610px}.chain-builder,.dialogue-response,.systems-board{padding:30px 34px;display:flex;flex-direction:column}.chain-stack{display:flex;flex-direction:column;gap:6px;flex:1}.chain-step{display:grid;grid-template-columns:42px minmax(150px,.55fr) 1fr;align-items:center;gap:12px;padding:12px;border:1px solid rgba(148,163,184,.18);border-radius:11px;background:rgba(5,9,17,.48)}.chain-step>span{width:34px;height:34px;display:grid;place-items:center;border:1px solid rgba(145,134,239,.32);border-radius:9px;color:#b9b2ff;font-weight:850;font-size:12px}.chain-step b,.chain-step small{display:block}.chain-step b{font-size:14px;color:#eef2ff}.chain-step small{margin-top:3px;font-size:12px;color:#8794a8}.chain-step input{width:100%;border:1px solid rgba(148,163,184,.2);background:#070c16;color:#f8fafc;border-radius:9px;padding:11px 12px;font-size:14px;outline:none}.chain-step input:focus{border-color:var(--accent-soft);box-shadow:0 0 0 3px rgba(97,84,223,.1)}.chain-arrow{height:12px;display:grid;place-items:center;color:#7468e4;font-style:normal;font-size:16px}.strike-panel{margin-top:18px;padding:13px 14px;border:1px solid rgba(239,174,68,.3);background:rgba(239,174,68,.07);border-radius:10px}.strike-panel>span,.strike-panel>b{display:block}.strike-panel>span{font-size:12px;letter-spacing:.1em;color:#f0b45d;font-weight:850}.strike-panel>b{margin-top:5px;font-size:24px}.strike-panel p{margin:4px 0 0;font-size:13px;line-height:1.45;color:#a9b3c2}.strike-panel.danger{border-color:rgba(239,71,111,.35);background:rgba(239,71,111,.07)}.strike-panel.danger>span{color:#ff8da8}.opponent-panel,.case-brief{padding:36px;border-right:1px solid rgba(148,163,184,.16);background:linear-gradient(160deg,rgba(97,84,223,.1),transparent 58%)}.opponent-panel blockquote{margin:22px 0;padding:20px;border-left:3px solid #9186ef;background:rgba(7,12,22,.45);font-size:24px;line-height:1.28;font-weight:760;letter-spacing:-.025em}.turn-meter{display:flex;align-items:center;justify-content:space-between;margin-top:14px;color:#99a6ba;font-size:13px}.turn-meter span{color:#b8b1ff;font-weight:800}.dialogue-log{display:grid;gap:8px;margin-top:16px}.dialogue-log div{padding:10px 12px;border:1px solid rgba(49,185,137,.2);border-radius:9px;background:rgba(49,185,137,.06)}.dialogue-log span{font-size:12px;letter-spacing:.08em;color:#75d6b2;font-weight:800}.dialogue-log p{margin:5px 0 0;font-size:13px;line-height:1.45;color:#c9d2de}.dialogue-response textarea{flex:1;min-height:360px;border:1px solid rgba(148,163,184,.2);background:rgba(5,9,17,.68);border-radius:12px;color:#f1f5f9;padding:18px;font:14px/1.65 Inter,sans-serif;resize:none;outline:none}.case-brief h2{font-size:clamp(25px,2.6vw,36px);line-height:1.12;margin:12px 0 14px}.case-brief>p{font-size:14px;line-height:1.6;color:#9ba8ba}.system-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1}.system-field{display:grid;grid-template-columns:34px 1fr;grid-template-rows:auto auto 1fr;gap:2px 10px;padding:12px;border:1px solid rgba(148,163,184,.18);border-radius:11px;background:rgba(5,9,17,.48)}.system-field>span{grid-row:1/3;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:rgba(97,84,223,.12);color:#b9b2ff;font-size:12px;font-weight:850}.system-field>b{font-size:14px}.system-field>small{font-size:12px;color:#8794a8}.system-field textarea{grid-column:1/-1;margin-top:8px;min-height:90px;resize:none;border:1px solid rgba(148,163,184,.18);border-radius:8px;background:#070c16;color:#f8fafc;padding:10px;font:13px/1.5 Inter,sans-serif;outline:none}.system-field textarea:focus,.dialogue-response textarea:focus{border-color:var(--accent-soft);box-shadow:0 0 0 3px rgba(97,84,223,.1)}
+  .chain-room,.dialogue-room,.case-room{display:grid;grid-template-columns:minmax(360px,.82fr) minmax(0,1.18fr);min-height:610px}.chain-builder,.dialogue-response,.systems-board{padding:30px 34px;display:flex;flex-direction:column}.chain-stack{display:flex;flex-direction:column;gap:5px;flex:1}.chain-step{position:relative;display:grid;grid-template-columns:42px minmax(145px,.52fr) 1fr 26px;align-items:center;gap:12px;padding:13px 14px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:linear-gradient(145deg,rgba(9,14,26,.84),rgba(12,18,32,.56));transition:.18s}.chain-step.complete{border-color:rgba(49,185,137,.32);background:linear-gradient(145deg,rgba(10,31,29,.56),rgba(9,15,26,.72))}.chain-index{width:34px;height:34px;display:grid;place-items:center;border:1px solid rgba(145,134,239,.34);border-radius:10px;color:#b9b2ff;font-weight:850;font-size:12px}.chain-copy b,.chain-copy small{display:block}.chain-copy b{font-size:14px;color:#eef2ff}.chain-copy small{margin-top:3px;font-size:12px;color:#8794a8}.chain-step textarea{width:100%;min-height:52px;resize:none;border:0;background:transparent;color:#f8fafc;padding:4px 2px;font:14px/1.5 Inter,system-ui,sans-serif;outline:none}.chain-step textarea::placeholder{color:#586679}.chain-state{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:rgba(97,84,223,.1);color:#756ae1;font-style:normal}.chain-step.complete .chain-state{background:rgba(49,185,137,.14);color:#55d3a5}.chain-arrow{height:10px;display:grid;place-items:center;color:#7468e4;font-style:normal;font-size:15px}.strike-panel{margin-top:18px;padding:13px 14px;border:1px solid rgba(239,174,68,.3);background:rgba(239,174,68,.07);border-radius:10px}.strike-panel>span,.strike-panel>b{display:block}.strike-panel>span{font-size:12px;letter-spacing:.1em;color:#f0b45d;font-weight:850}.strike-panel>b{margin-top:5px;font-size:24px}.strike-panel p{margin:4px 0 0;font-size:13px;line-height:1.45;color:#a9b3c2}.strike-panel.danger{border-color:rgba(239,71,111,.35);background:rgba(239,71,111,.07)}.strike-panel.danger>span{color:#ff8da8}
+  .opponent-panel,.case-brief{padding:36px;border-right:1px solid rgba(148,163,184,.16);background:linear-gradient(160deg,rgba(97,84,223,.1),transparent 58%)}.dialogue-topline{display:flex;align-items:center;justify-content:space-between}.turn-meter{display:flex;align-items:center;gap:10px;color:#99a6ba;font-size:13px}.turn-meter span{color:#b8b1ff;font-weight:800}.opponent-message{display:grid;grid-template-columns:58px 1fr;gap:14px;align-items:start;margin-top:24px}.opponent-message img{width:56px;height:56px;object-fit:contain;filter:drop-shadow(0 10px 18px rgba(97,84,223,.25))}.opponent-message>div>span{font-size:12px;letter-spacing:.12em;color:#8f86f3;font-weight:850}.opponent-panel blockquote{margin:8px 0 0;padding:18px 20px;border:1px solid rgba(145,134,239,.22);border-left:3px solid #9186ef;border-radius:0 13px 13px 13px;background:linear-gradient(145deg,rgba(26,30,56,.72),rgba(7,12,22,.45));font-size:24px;line-height:1.28;font-weight:760;letter-spacing:-.025em}.dialogue-log{display:grid;gap:8px;margin-top:16px}.dialogue-log div{padding:10px 12px;border:1px solid rgba(49,185,137,.2);border-radius:9px;background:rgba(49,185,137,.06)}.dialogue-log span{font-size:12px;letter-spacing:.08em;color:#75d6b2;font-weight:800}.dialogue-log p{margin:5px 0 0;font-size:13px;line-height:1.45;color:#c9d2de}.composer-shell{display:flex;flex-direction:column;flex:1;min-height:390px;border:1px solid rgba(148,163,184,.18);border-radius:16px;background:linear-gradient(145deg,rgba(6,10,19,.88),rgba(10,15,28,.72));box-shadow:inset 0 1px rgba(255,255,255,.025),0 20px 50px rgba(0,0,0,.18)}.composer-head,.composer-foot{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;color:#79869a;font-size:12px}.composer-head{border-bottom:1px solid rgba(148,163,184,.12)}.composer-head span{letter-spacing:.11em;color:#a69eff;font-weight:850}.composer-foot{border-top:1px solid rgba(148,163,184,.1)}.composer-foot kbd{padding:3px 7px;border:1px solid rgba(148,163,184,.16);border-radius:6px;background:#111827;color:#8894a7;font:12px Inter,system-ui,sans-serif}.dialogue-response textarea{flex:1;min-height:260px;border:0;background:transparent;color:#f1f5f9;padding:20px;font:15px/1.7 Inter,system-ui,sans-serif;resize:none;outline:none}.dialogue-submit{align-self:flex-end;margin-top:12px;min-width:220px}
+  .case-brief h2{font-size:clamp(25px,2.6vw,36px);line-height:1.12;margin:12px 0 14px}.case-brief>p{font-size:14px;line-height:1.6;color:#9ba8ba}.system-tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:14px}.system-tabs button{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:7px;min-width:0;padding:10px;border:1px solid rgba(148,163,184,.16);border-radius:10px;background:rgba(7,12,22,.5);color:#8d99ab;cursor:pointer}.system-tabs button span{font-size:12px;color:#6f7c90}.system-tabs button b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:12px}.system-tabs button i{font-style:normal;color:#59677b}.system-tabs button.active{border-color:#9186ef;background:rgba(97,84,223,.12);color:#fff;box-shadow:0 0 0 2px rgba(97,84,223,.08)}.system-tabs button.complete i{color:#53d2a1}.system-focus{display:flex;flex-direction:column;flex:1;padding:22px;border:1px solid rgba(148,163,184,.17);border-radius:16px;background:linear-gradient(145deg,rgba(7,12,22,.82),rgba(13,18,32,.62));box-shadow:inset 0 1px rgba(255,255,255,.02)}.system-focus-label{display:flex;align-items:center;gap:12px}.system-focus-label span{font-size:12px;letter-spacing:.12em;color:#7d899d}.system-focus-label b{font-size:14px;color:#bcb5ff}.system-focus h3{margin:12px 0 14px;font-size:23px;line-height:1.18;letter-spacing:-.025em}.system-focus textarea{flex:1;min-height:210px;resize:none;border:0;border-radius:12px;background:#070b14;color:#f8fafc;padding:18px;font:15px/1.65 Inter,system-ui,sans-serif;outline:none;box-shadow:inset 0 0 0 1px rgba(148,163,184,.15)}.system-focus textarea:focus{box-shadow:inset 0 0 0 1px #9186ef,0 0 0 3px rgba(97,84,223,.08)}.system-nav{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.ghost{border:1px solid rgba(148,163,184,.17);background:#0d1422;color:#9aa7ba;border-radius:9px;padding:11px 14px;font-size:13px;font-weight:750;cursor:pointer}.ghost:disabled{opacity:.3;cursor:not-allowed}
 
   @media(max-width:960px){.cinema,.quiz-room,.recall-room,.chain-room,.dialogue-room,.case-room{grid-template-columns:1fr}.mission-brief,.quiz-brief,.brief{border-left:0;border-right:0;border-top:1px solid rgba(148,163,184,.16)}.frame-wrap{order:1}.mission-brief{order:2}.room-identity{grid-template-columns:auto 1fr}.belief-chip{display:none}.recall-room{min-height:auto}.answer-panel textarea{min-height:280px}}
   @media(max-width:620px){.encounter{padding:18px 12px 40px}.room-identity{margin:12px 0 17px}.badge-wrap{width:64px;height:64px}.identity-copy h1{font-size:32px}.cinema,.quiz-room,.recall-room,.chain-room,.dialogue-room,.case-room{border-radius:12px}.mission-brief,.quiz-brief,.brief,.answer-panel,.options{padding:22px}.frame-wrap{padding:10px}.answer-panel textarea{min-height:240px}.answer-footer{align-items:flex-start;flex-direction:column}.answer-footer .primary{width:100%}}
