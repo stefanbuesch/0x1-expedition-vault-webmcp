@@ -17,13 +17,13 @@ The visible WebMCP bridge shows the actual product contract:
 
 `Browser agent → document.modelContext → four tools → one shared expedition state → human UI`
 
-A browser-agent action is immediately reflected in the map, room state, mastery, and event log. Human actions update the same state that WebMCP reads.
+A browser-agent action is immediately reflected in the map, room state, mastery, and event log. Human actions update the same state that WebMCP reads. Tool schemas are registered once per pack/module schema and reused across ordinary checkpoint, belief, and navigation mutations rather than being torn down and rebuilt on every state change.
 
 ## Product experience
 
 - Persistent **Vault** with real knowledge-pack cards, saved progress, source type, mastery, and resume state.
 - Dynamic **Forge** for topics, YouTube lectures, public webpages/PDFs, pasted notes, and `.pdf` / `.txt` / `.md` uploads.
-- Public YouTube captions are extracted when available and used to ground generated concepts and questions.
+- Public YouTube captions are extracted when available and used to ground generated concepts and questions; when a serverless datacenter is denied captions, the app keeps the real video metadata/playback and reports transcript unavailability instead of pretending transcript grounding.
 - An 8-room / 6-stage branching expedition template with route choices, convergence, cognition checks, and a boss defense.
 - Multi-part rooms such as source → retrieval, quiz → recall, recall → adversarial dialogue, and transfer → falsification.
 - Explicit cognition gates including blind transfer, source-vs-inference separation, adversarial prediction, and integrative defense.
@@ -36,9 +36,9 @@ The server extraction route supports:
 
 - YouTube URLs: video metadata plus caption transcript when publicly available.
 - Public HTTP(S) webpages: readable text extraction with redirect and size limits.
-- Public PDF URLs and uploaded PDFs via `pdftotext`.
+- Public PDF URLs and uploaded PDFs through a serverless-native PDF parser; image-only PDFs fail explicitly instead of silently producing an empty course.
 - `.txt` and `.md` uploads.
-- Private-network URL blocking to avoid SSRF-style access to localhost/private address ranges.
+- Streaming 8 MB response limits plus private/reserved-network and credential-bearing URL blocking to prevent SSRF-style access.
 
 ## Run locally
 

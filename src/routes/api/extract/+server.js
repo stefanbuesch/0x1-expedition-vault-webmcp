@@ -101,12 +101,38 @@ function balancedJsonAfter(source, marker) {
 }
 
 function isPrivateIp(address = '') {
-  const value = String(address).toLowerCase();
-  if (value === '::1' || value.startsWith('fe80:') || value.startsWith('fc') || value.startsWith('fd')) return true;
+  const value = String(address).trim().toLowerCase();
+  const embeddedV4 = value.match(/(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/)?.[1];
+  if (embeddedV4 && embeddedV4 !== value) return isPrivateIp(embeddedV4);
+
+  if (value.includes(':')) {
+    const first = value.split(':')[0];
+    return value === '::'
+      || value === '::1'
+      || first === 'fc'
+      || first === 'fd'
+      || value.startsWith('fc')
+      || value.startsWith('fd')
+      || /^fe[89ab]/.test(first)
+      || value.startsWith('ff')
+      || value.startsWith('2001:db8:');
+  }
+
   const parts = value.split('.').map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) return false;
-  const [a, b] = parts;
-  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  const [a, b, c] = parts;
+  return a === 0
+    || a === 10
+    || a === 127
+    || a >= 224
+    || (a === 100 && b >= 64 && b <= 127)
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || (a === 192 && b === 0 && (c === 0 || c === 2))
+    || (a === 198 && (b === 18 || b === 19))
+    || (a === 198 && b === 51 && c === 100)
+    || (a === 203 && b === 0 && c === 113);
 }
 
 async function assertPublicUrl(raw) {
@@ -255,11 +281,13 @@ async function fetchYoutube(raw) {
 async function pdfToText(buffer) {
   const pdf = await getDocumentProxy(new Uint8Array(buffer));
   const extracted = await extractText(pdf, { mergePages: true });
-  return String(extracted?.text || '')
+  const text = String(extracted?.text || '')
     .replace(/\u0000/g, '')
     .replace(/\n{4,}/g, '\n\n')
     .trim()
     .slice(0, MAX_TEXT);
+  if (!text) throw new Error('This PDF contains no extractable text. Use an OCR/text PDF, TXT, Markdown, or paste the source text.');
+  return text;
 }
 
 async function fetchPublic(raw) {

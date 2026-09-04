@@ -17,7 +17,7 @@
   let pack = cloneKnowledgePack();
   let rooms = pack.rooms;
   let mode = 'map';
-  let activeTab = 'library';
+  let activeTab = 'classroom';
   let activePackId = pack.id;
   let packLibrary = [];
   let storageReady = false;
@@ -169,6 +169,7 @@
   }
 
   function roomBadge(room = {}) {
+    if (room.status === 'locked') return '/assets/vault-crest.webp';
     const title = String(room.title || '').toLowerCase();
     if (room.nodeType === 'boss' || title.includes('defense') || title.includes('commutation')) return '/assets/boss.webp';
     if (title.includes('load') || title.includes('motor') || title.includes('mechanism')) return '/assets/gear.webp';
@@ -738,10 +739,15 @@
         persistVault(true);
       }
     };
+    const flushWhenHidden = () => {
+      if (document.visibilityState === 'hidden') flushCurrentRun();
+    };
     window.addEventListener('beforeunload', flushCurrentRun);
+    document.addEventListener('visibilitychange', flushWhenHidden);
     timer = setInterval(() => {
+      if (activeTab !== 'classroom' || document.visibilityState !== 'visible') return;
       elapsed += 1;
-      if (elapsed % 30 === 0 && activeTab !== 'library') upsertCurrentPack();
+      if (elapsed % 30 === 0) upsertCurrentPack();
     }, 1000);
     return () => {
       if (toolSyncTimer) clearTimeout(toolSyncTimer);
@@ -750,6 +756,7 @@
       if (persistIdle && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(persistIdle);
       flushCurrentRun();
       window.removeEventListener('beforeunload', flushCurrentRun);
+      document.removeEventListener('visibilitychange', flushWhenHidden);
       clearInterval(timer);
       adapter?.destroy();
     };
@@ -761,10 +768,7 @@
   <meta name="description" content="An agent-native learning roguelike powered by WebMCP." />
   <meta name="theme-color" content="#f7f8fb" />
   <link rel="icon" type="image/webp" href="/assets/vault-crest.webp" />
-  <link rel="preload" as="image" href="/assets/expedition-map.webp" fetchpriority="high" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="preload" as="image" href="/assets/expedition-map-1400.webp" imagesrcset="/assets/expedition-map-1400.webp 1x, /assets/expedition-map.webp 2x" fetchpriority="high" />
   <link rel="stylesheet" href="/vault.css" />
 </svelte:head>
 
@@ -904,10 +908,10 @@
               <div class="forge-icon">↗</div>
               <div class="forge-copyline">
                 <b>Generate Knowledge Pack from any URL</b>
-                <span class:error={Boolean(quickForgeError)}>{quickForgeError || (sourceGroundingTitle ? `Current run grounded in ${sourceGroundingTitle}. Forge another source instantly.` : 'YouTube, article, public PDF, or any supported URL.')}</span>
+                <span class:error={Boolean(quickForgeError)} aria-live="polite">{quickForgeError || (sourceGroundingTitle ? `Current run grounded in ${sourceGroundingTitle}. Forge another source instantly.` : 'YouTube, article, public PDF, or any supported URL.')}</span>
               </div>
-              <input bind:value={quickForgeUrl} placeholder="Paste YouTube, PDF, article, or source URL…" on:keydown={(event) => event.key === 'Enter' && handleQuickForge()} />
-              <button disabled={isIngesting} on:click={handleQuickForge}>{isIngesting ? 'Forging…' : quickForgeUrl.trim() ? 'Forge Pack' : 'Open Forge'}</button>
+              <input bind:value={quickForgeUrl} aria-label="Source URL for quick Forge" placeholder="Paste YouTube, PDF, article, or source URL…" on:keydown={(event) => event.key === 'Enter' && handleQuickForge()} />
+              <button disabled={isIngesting} aria-busy={isIngesting} on:click={handleQuickForge}>{isIngesting ? 'Forging…' : quickForgeUrl.trim() ? 'Forge Pack' : 'Open Forge'}</button>
             </section>
           </section>
 

@@ -91,6 +91,7 @@
   }
 
   function iconFor(room, index) {
+    if (room.status === 'locked') return '/assets/vault-crest.webp';
     const title = String(room.title || '').toLowerCase();
     if (room.nodeType === 'boss' || title.includes('commutation')) return '/assets/boss.webp';
     if (title.includes('load') || title.includes('motor')) return '/assets/gear.webp';
@@ -135,8 +136,8 @@
     </button>
   {/each}
 
-  <img class="reward reward-chest" src="/assets/reward-chest.webp" alt="" aria-hidden="true" />
-  <img class="reward reward-relic" src="/assets/relic-red.webp" alt="" aria-hidden="true" />
+  <img class="reward reward-chest" src="/assets/reward-chest.webp" alt="" aria-hidden="true" decoding="async" fetchpriority="low" />
+  <img class="reward reward-relic" src="/assets/relic-red.webp" alt="" aria-hidden="true" decoding="async" fetchpriority="low" />
 
   <div class="board-stats">
     <span>RUN STATS</span>
@@ -146,7 +147,7 @@
 </section>
 
 <style>
-  .board{position:relative;min-height:452px;overflow:hidden;border:1px solid #d5d9e3;border-radius:18px;background:#eee3c9 url('/assets/expedition-map.webp') center/cover no-repeat;box-shadow:0 18px 50px rgba(15,23,42,.09),0 1px 2px rgba(15,23,42,.06)}
+  .board{position:relative;min-height:452px;overflow:hidden;border:1px solid #d5d9e3;border-radius:18px;background:#eee3c9 var(--map-image) center/cover no-repeat;box-shadow:0 18px 50px rgba(15,23,42,.09),0 1px 2px rgba(15,23,42,.06)}
   .map-wash{position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(247,239,219,.09));box-shadow:inset 0 0 90px rgba(90,69,31,.08)}
   .board-copy{position:absolute;z-index:4;left:18px;top:18px;width:225px;padding:13px 14px;border:1px solid rgba(204,196,174,.9);border-radius:11px;background:rgba(255,253,246,.88);backdrop-filter:blur(7px);box-shadow:0 5px 18px rgba(75,57,25,.07)}
   .board-copy span{font-size:8px;font-weight:850;letter-spacing:.13em;color:#5145cd}.board-copy h2{margin:5px 0 4px;font-size:17px;letter-spacing:-.035em;color:#1f2937}.board-copy p{margin:0;color:#6b7280;font-size:9px;line-height:1.45}.board-enter{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;margin-top:10px;padding:7px 9px;border:1px solid #ddd7fb;border-radius:7px;background:#fff;color:#5145cd;font-size:8px;font-weight:800;cursor:pointer;box-shadow:0 2px 5px rgba(79,70,229,.05)}.board-enter:hover{background:#f5f3ff;border-color:#bdb4f5}.board-enter b{font-size:11px}

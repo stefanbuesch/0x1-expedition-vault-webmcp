@@ -31,7 +31,7 @@ Examples:
 3. `submit_solution`
 4. `inspect_progress`
 
-Tool registration is synchronized as the run changes. Tools call the same action functions used by the page runtime; there is no second agent-only course state. The UI includes a visible WebMCP bridge and console showing the model-context connection, registered tools, live run state, and latest shared mutations.
+Tool registration follows the pack/module schema rather than every transient state mutation: once the four tools are registered for a pack, checkpoint, belief, and navigation changes reuse those registrations. Tools call the same action functions used by the page runtime; there is no second agent-only course state. The UI includes a visible WebMCP bridge and console showing the model-context connection, registered tools, live run state, and latest shared mutations.
 
 ## Product flow
 
@@ -58,4 +58,4 @@ Use ChatGPT's in-app browser or Chrome with WebMCP testing enabled.
 
 ## Built with
 
-SvelteKit, Svelte 5, Vite, WebMCP / `document.modelContext`, YouTube transcript extraction, `pdftotext`, browser local storage.
+SvelteKit, Svelte 5, Vite, WebMCP / `document.modelContext`, opportunistic YouTube transcript extraction with metadata fallback, serverless-native PDF extraction, and browser local storage.
