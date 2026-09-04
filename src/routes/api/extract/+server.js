@@ -28,6 +28,35 @@ function cacheExtraction(key, value) {
   while (extractionCache.size > CACHE_LIMIT) extractionCache.delete(extractionCache.keys().next().value);
 }
 
+async function readLimitedBytes(response, limit = MAX_BYTES, message = 'Source is larger than the ingestion limit.') {
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > limit) throw new Error(message);
+  if (!response.body?.getReader) {
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length > limit) throw new Error(message);
+    return bytes;
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel();
+        throw new Error(message);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  return Buffer.concat(chunks, total);
+}
+
 function youtubeVideoId(raw = '') {
   try {
     const url = new URL(String(raw));
@@ -156,13 +185,11 @@ async function fetchYoutubeMetadata(raw) {
       }
     });
     if (response.ok) {
-      const html = await response.text();
-      if (Buffer.byteLength(html, 'utf8') <= MAX_BYTES) {
-        const player = balancedJsonAfter(html, 'ytInitialPlayerResponse = ')
-          || balancedJsonAfter(html, 'ytInitialPlayerResponse=')
-          || balancedJsonAfter(html, '"ytInitialPlayerResponse":');
-        details = player?.videoDetails || {};
-      }
+      const html = (await readLimitedBytes(response, MAX_BYTES, 'YouTube source exceeded the ingestion limit.')).toString('utf8');
+      const player = balancedJsonAfter(html, 'ytInitialPlayerResponse = ')
+        || balancedJsonAfter(html, 'ytInitialPlayerResponse=')
+        || balancedJsonAfter(html, '"ytInitialPlayerResponse":');
+      details = player?.videoDetails || {};
     }
   } catch {
     // Datacenter requests to the YouTube watch page are frequently throttled.
@@ -248,11 +275,8 @@ async function fetchPublic(raw) {
       continue;
     }
     if (!response.ok) throw new Error(`Source returned HTTP ${response.status}.`);
-    const contentLength = Number(response.headers.get('content-length') || 0);
-    if (contentLength > MAX_BYTES) throw new Error('Source is larger than the 8 MB ingestion limit.');
     const contentType = (response.headers.get('content-type') || '').toLowerCase();
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length > MAX_BYTES) throw new Error('Source is larger than the 8 MB ingestion limit.');
+    const bytes = await readLimitedBytes(response, MAX_BYTES, 'Source is larger than the 8 MB ingestion limit.');
     if (contentType.includes('application/pdf') || current.pathname.toLowerCase().endsWith('.pdf')) {
       return { title: current.pathname.split('/').pop()?.replace(/\.pdf$/i, '') || 'PDF source', text: await pdfToText(bytes), contentType: 'application/pdf', url: current.toString() };
     }

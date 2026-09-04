@@ -52,6 +52,7 @@
   let ingestTitle = '';
   let ingestUrl = '';
   let quickForgeUrl = '';
+  let quickForgeError = '';
   let ingestContent = '';
   let ingestError = '';
   let uploadedFileName = '';
@@ -176,6 +177,15 @@
     if (title.includes('faraday') || room.nodeType === 'quiz' || title.includes('thesis')) return '/assets/book.webp';
     if (room.nodeType === 'video' || title.includes('source')) return '/assets/crystal.webp';
     return '/assets/vault-crest.webp';
+  }
+
+  function toolLabel(name = '') {
+    return ({
+      ingest_learning_material: 'Ingest Source',
+      explore_module: 'Explore Module',
+      submit_solution: 'Submit Solution',
+      inspect_progress: 'Inspect Progress'
+    })[name] || String(name).replaceAll('_', ' ');
   }
 
   function summarizeLibraryEntry(entry) {
@@ -509,6 +519,7 @@
 
   async function handleQuickForge() {
     const url = quickForgeUrl.trim();
+    quickForgeError = '';
     if (!url) {
       activeTab = 'ingest';
       return;
@@ -519,7 +530,8 @@
     uploadedFileName = '';
     ingestUrl = url;
     await handleIngestMaterial();
-    if (!ingestError) quickForgeUrl = '';
+    if (ingestError) quickForgeError = ingestError;
+    else quickForgeUrl = '';
   }
 
   async function handleFileUpload(event) {
@@ -715,7 +727,8 @@
       activeTab = 'classroom';
       openRoom(requestedRoom);
     } else {
-      activeTab = 'library';
+      activeTab = 'classroom';
+      mode = 'map';
     }
 
     const flushCurrentRun = () => {
@@ -891,7 +904,7 @@
               <div class="forge-icon">↗</div>
               <div class="forge-copyline">
                 <b>Generate Knowledge Pack from any URL</b>
-                <span>{sourceGroundingTitle ? `Current run grounded in ${sourceGroundingTitle}. Forge another source instantly.` : 'YouTube, article, public PDF, or any supported URL.'}</span>
+                <span class:error={Boolean(quickForgeError)}>{quickForgeError || (sourceGroundingTitle ? `Current run grounded in ${sourceGroundingTitle}. Forge another source instantly.` : 'YouTube, article, public PDF, or any supported URL.')}</span>
               </div>
               <input bind:value={quickForgeUrl} placeholder="Paste YouTube, PDF, article, or source URL…" on:keydown={(event) => event.key === 'Enter' && handleQuickForge()} />
               <button disabled={isIngesting} on:click={handleQuickForge}>{isIngesting ? 'Forging…' : quickForgeUrl.trim() ? 'Forge Pack' : 'Open Forge'}</button>
@@ -950,8 +963,7 @@
             <section class="rail-card agent-card webmcp-card">
               <div class="rail-heading"><b>Guide Agent <em>//</em></b><span class="live-dot">{webmcpNative ? 'Active · WebMCP' : 'WebMCP ready'}</span></div>
               <p>Your browser-native co-pilot shares the same expedition state, gates, mastery, and checkpoints shown on this map.</p>
-              <div class="tool-chips">{#each (exposedTools.length ? exposedTools : ['ingest_learning_material', 'explore_module', 'submit_solution', 'inspect_progress']) as tool}<code>{tool}</code>{/each}</div>
-              {#if activity.length}<div class="agent-event"><small>LATEST SHARED MUTATION</small><b>{activity[0].tool}</b><span>{activity[0].result}</span></div>{/if}
+              <div class="tool-chips">{#each (exposedTools.length ? exposedTools : ['ingest_learning_material', 'explore_module', 'submit_solution', 'inspect_progress']) as tool}<code title={tool}>{toolLabel(tool)}</code>{/each}</div>
               <button class="agent-console-cta" on:click={() => activeTab = 'agent'}>Open WebMCP Console →</button>
             </section>
           </aside>
