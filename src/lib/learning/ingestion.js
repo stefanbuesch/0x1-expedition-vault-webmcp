@@ -110,7 +110,7 @@ export function generateKnowledgePackFromMaterial({ title = '', content = '', ur
     glyph,
     edges,
     map,
-    parts: parts.map((part, index) => ({ id: `${refId}-p${index + 1}`, ...part })),
+    parts: parts.map((part, index) => ({ id: `${refId}-p${index + 1}`, strikeRisk: part.strikeRisk ?? !['video', 'text', 'content', 'image'].includes(part.type), ...part })),
     part: { id: `${refId}-p1`, ...parts[0] }
   });
 
@@ -304,6 +304,7 @@ export function generateKnowledgePackFromMaterial({ title = '', content = '', ur
     seed: `0x${hash(`${url}|${rawText}|${cleanTitle}`).slice(0, 6)}`,
     goal: shorten(thesis, 260),
     threshold: 65,
+    maxStrikes: 3,
     template: 'standard-branching',
     estimatedMinutes: 20,
     source: {

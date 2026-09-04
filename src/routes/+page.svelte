@@ -29,6 +29,10 @@
   let belief = 56;
   let beliefDelta = 0;
   let beliefHistory = [{ index: 0, belief, delta: 0, roomId: currentRoomId, actor: 'system' }];
+  let strikes = 0;
+  let maxStrikes = 3;
+  let runStatus = 'active';
+  let failureReason = '';
   let evidence = [];
   let activity = [];
   let exposedTools = [];
@@ -153,6 +157,10 @@
       belief,
       beliefDelta,
       beliefHistory: structuredClone(beliefHistory),
+      strikes,
+      maxStrikes,
+      runStatus,
+      failureReason,
       evidence: structuredClone(evidence),
       elapsed,
       activity: structuredClone(activity.slice(0, 12))
@@ -290,10 +298,14 @@
     belief = Number(snapshot.belief ?? 50);
     beliefDelta = Number(snapshot.beliefDelta || 0);
     beliefHistory = snapshot.beliefHistory || [{ index: 0, belief, delta: 0, roomId: currentRoomId, actor: 'system' }];
+    strikes = Number(snapshot.strikes || 0);
+    maxStrikes = Math.max(1, Number(snapshot.maxStrikes || 3));
+    runStatus = snapshot.runStatus || 'active';
+    failureReason = snapshot.failureReason || '';
     evidence = snapshot.evidence || [];
     elapsed = Number(snapshot.elapsed || 0);
     activity = snapshot.activity || [];
-    showPostRun = false;
+    showPostRun = openRun && runStatus === 'failed';
     if (openRun) {
       activeTab = 'classroom';
       mode = activeRoomId ? 'room' : 'map';
@@ -328,6 +340,10 @@
     belief = 50;
     beliefDelta = 0;
     beliefHistory = [{ index: 0, belief, delta: 0, roomId: currentRoomId, actor }];
+    strikes = 0;
+    maxStrikes = Math.max(1, Number(pack.maxStrikes || 3));
+    runStatus = 'active';
+    failureReason = '';
     evidence = [];
     elapsed = 0;
     showPostRun = false;
@@ -366,6 +382,27 @@
     scheduleToolSync();
   }
 
+  function failRun(reason = 'The expedition collapsed under accumulated mistakes.', actor = 'human', roomId = activeRoomId || currentRoomId) {
+    if (runStatus === 'failed') return;
+    runStatus = 'failed';
+    failureReason = reason;
+    log(actor === 'agent' ? 'agent_run_failed' : 'human_run_failed', roomId, reason, 'approval');
+    activeRoomId = '';
+    activePartIndex = 0;
+    mode = 'map';
+    showPostRun = true;
+    scheduleToolSync();
+  }
+
+  function takeStrike(reason = 'Checkpoint failed.', actor = 'human', roomId = activeRoomId || currentRoomId) {
+    if (runStatus !== 'active') return { strikes, maxStrikes, failed: runStatus === 'failed' };
+    strikes = Math.min(maxStrikes, strikes + 1);
+    log(actor === 'agent' ? 'agent_strike' : 'human_strike', roomId, `${reason} · strike ${strikes}/${maxStrikes}`, 'approval');
+    if (strikes >= maxStrikes) failRun(`${reason} Three strikes ended this expedition.`, actor, roomId);
+    else scheduleToolSync();
+    return { strikes, maxStrikes, failed: runStatus === 'failed' };
+  }
+
   function unlockFrom(room) {
     for (const edge of room.edges || []) {
       const target = rooms.find((candidate) => candidate.refId === edge.targetRefId);
@@ -380,6 +417,7 @@
   }
 
   function openRoom(id, actor = 'human') {
+    if (runStatus !== 'active') return false;
     const room = rooms.find((candidate) => candidate.refId === id);
     if (!room || room.status === 'locked') return false;
     currentRoomId = id;
@@ -399,6 +437,7 @@
   }
 
   function completeRoom(room, result = {}, actor = 'human') {
+    if (runStatus !== 'active') return;
     if (!room || cleared.includes(room.refId)) {
       leaveRoom();
       return;
@@ -439,6 +478,11 @@
       const letter = String.fromCharCode(65 + Number(targetPart.correctIndex || 0)).toLowerCase();
       const ok = text === letter || text === String(targetPart.correctIndex) || text.includes(correct.slice(0, Math.min(26, correct.length)));
       return { success: ok, score: ok ? 1 : 0, detail: ok ? targetPart.explanation : 'The answer failed this checkpoint.' };
+    }
+    if (Array.isArray(targetPart.caseFields) && targetPart.caseFields.some((field) => Array.isArray(field.expected) && field.expected.length)) {
+      const scores = targetPart.caseFields.map((field) => (field.expected || []).some((token) => text.includes(String(token).toLowerCase())) ? 1 : 0);
+      const score = scores.reduce((sum, value) => sum + value, 0) / Math.max(1, scores.length);
+      return { success: score >= .8, score, detail: `Systems board coverage ${Math.round(score * 100)}%.` };
     }
     return evaluateTextCheckpoint({
       text: solution,
@@ -579,6 +623,7 @@
       return { success: true, courseId: pack.id, title: pack.title, modules: rooms.length, concepts: pack.concepts || [], template: pack.template, summary: `Created and launched “${pack.title}” as a ${rooms.length}-room branching expedition.` };
     },
     exploreModule(id) {
+      if (runStatus !== 'active') throw new Error(`Expedition is ${runStatus}. Restart the run before entering another module.`);
       const room = rooms.find((candidate) => candidate.refId === id);
       if (!room) throw new Error(`Unknown module ${id}`);
       if (room.status === 'locked') throw new Error(`Module ${id} is locked. Complete its prerequisite first.`);
@@ -610,6 +655,9 @@
         activePartIndex,
         activePartCount: activeParts.length,
         activePartType: activePart?.type || null,
+        runStatus,
+        strikes,
+        maxStrikes,
         concepts: pack.concepts || [],
         source: pack.source || {},
         trajectory: beliefHistory.slice(-10),
@@ -617,6 +665,7 @@
       };
     },
     submitSolution(moduleId, solution) {
+      if (runStatus !== 'active') return { success: false, runStatus, strikes, maxStrikes, runFailed: runStatus === 'failed', summary: `Expedition is ${runStatus}. Restart before submitting another solution.` };
       const room = rooms.find((candidate) => candidate.refId === moduleId);
       if (!room || room.status === 'locked') return { success: false, summary: 'Encounter refused: module is locked.' };
       if (activeRoomId !== moduleId) openRoom(moduleId, 'agent');
@@ -641,8 +690,9 @@
         completeRoom(room, { delta, detail: outcome.detail }, 'agent');
         return { success: true, score: outcome.score, delta, belief, moduleId, partIndex, roomComplete: true, summary: `${room.title}: ${outcome.detail} Room cleared.` };
       }
+      const strikeState = takeStrike(outcome.detail || 'Checkpoint failed.', 'agent', moduleId);
       log('agent_solution_refused', { moduleId, partIndex }, outcome.detail, 'approval');
-      return { success: false, score: outcome.score, delta, belief, moduleId, partIndex, roomComplete: false, summary: `${room.title}: ${outcome.detail}` };
+      return { success: false, score: outcome.score, delta, belief, moduleId, partIndex, roomComplete: false, runStatus, strikes: strikeState.strikes, maxStrikes, runFailed: strikeState.failed, summary: strikeState.failed ? `${room.title}: ${outcome.detail} Expedition failed at ${strikes}/${maxStrikes} strikes.` : `${room.title}: ${outcome.detail} Strike ${strikes}/${maxStrikes}.` };
     }
   };
 
@@ -654,6 +704,9 @@
       activeRoomId,
       cleared: [...cleared],
       masteryScore: belief,
+      runStatus,
+      strikes,
+      maxStrikes,
       threshold: pack.threshold || 50,
       progress: overallProgress,
       source: pack.source || {},
@@ -784,6 +837,9 @@
       clearedCount={clearedStageCount}
       totalRooms={stageCount}
       {partProgress}
+      {strikes}
+      {maxStrikes}
+      {runStatus}
       onVault={goLibrary}
       onMap={leaveRoom}
     />
@@ -795,8 +851,11 @@
       alreadyCleared={cleared.includes(activeRoom.refId)}
       nextRoomTitle={activeNextRoomLabel}
       currentPartIndex={activePartIndex}
+      {strikes}
+      {maxStrikes}
       onPartChange={(index) => { activePartIndex = index; scheduleToolSync(); }}
       onBeliefChange={(delta) => applyBelief(delta, 'human', activeRoom.refId)}
+      onFailure={(reason) => takeStrike(reason, 'human', activeRoom.refId)}
       onComplete={(result) => completeRoom(activeRoom, result, 'human')}
     />
     <AgentCoPilotDock native={webmcpNative} tools={exposedTools} {activity} />
@@ -902,7 +961,7 @@
 
         <div class="vault-grid">
           <section class="hero-column">
-            <DungeonMap rooms={rooms} currentRefId={currentRoomId} clearedRefIds={cleared} onRoomClick={openRoom} />
+            <DungeonMap rooms={rooms} currentRefId={currentRoomId} clearedRefIds={cleared} seed={pack.seed} onRoomClick={openRoom} />
             <section class="forge-bar quick-forge" class:grounded={Boolean(sourceGroundingTitle)}>
               <div class="forge-icon">↗</div>
               <div class="forge-copyline">
@@ -923,6 +982,7 @@
                   <div><span>Rooms mastered</span><b>{cleared.length} / {rooms.length}</b></div>
                   <div><span>Run depth</span><b>{clearedStageCount} / {stageCount}</b></div>
                   <div><span>Boss threshold</span><b>{pack.threshold || 50}%</b></div>
+                  <div><span>Strikes</span><b>{strikes} / {maxStrikes}</b></div>
                 </div>
               </div>
             </section>
@@ -1138,11 +1198,15 @@
     {belief}
     cleared={cleared.length}
     hasAnnex={Boolean(annexRoom)}
+    status={runStatus === 'failed' ? 'failed' : 'completed'}
+    {failureReason}
     onClose={() => showPostRun = false}
     onRestart={restart}
     onContinue={() => {
       showPostRun = false;
       if (annexRoom) {
+        runStatus = 'active';
+        failureReason = '';
         annexRoom.status = 'available';
         rooms = [...rooms];
         currentRoomId = annexRoom.refId;

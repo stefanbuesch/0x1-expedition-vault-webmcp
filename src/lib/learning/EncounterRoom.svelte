@@ -7,6 +7,9 @@
   export let belief = 60;
   export let onComplete = () => {};
   export let onBeliefChange = () => {};
+  export let onFailure = () => {};
+  export let strikes = 0;
+  export let maxStrikes = 3;
   export let clearedCount = 0;
   export let totalRooms = 1;
   export let alreadyCleared = false;
@@ -20,6 +23,10 @@
   let submitted = false;
   let watched = false;
   let completion = null;
+  let chainSteps = [];
+  let dialogueTurn = 0;
+  let dialogueLog = [];
+  let caseAnswers = {};
   let lastPartKey = '';
 
   $: parts = Array.isArray(room?.parts) && room.parts.length ? room.parts : [room?.part].filter(Boolean);
@@ -31,6 +38,19 @@
   $: expected = part.expected || part.checklist || [];
   $: cognitionCheck = part.cognitionCheck || null;
   $: icon = iconFor(room);
+  $: chainCount = Math.max(3, Math.min(5, expected.length || 4));
+  $: caseFields = part.caseFields || (isBoss ? [
+    { id: 'claim', label: room?.refId === 'motor-load' ? 'Speed' : 'Central claim', prompt: room?.refId === 'motor-load' ? 'What happens to shaft speed immediately and as the motor settles?' : 'State the claim you are defending.' },
+    { id: 'mechanism', label: room?.refId === 'motor-load' ? 'Back-EMF' : 'Mechanism', prompt: room?.refId === 'motor-load' ? 'What changes in the opposing induced voltage, and why?' : 'Explain the causal mechanism.' },
+    { id: 'evidence', label: room?.refId === 'motor-load' ? 'Current' : 'Evidence', prompt: room?.refId === 'motor-load' ? 'Predict armature current and connect it to back-EMF.' : 'Name the strongest source-grounded evidence.' },
+    { id: 'boundary', label: room?.refId === 'motor-load' ? 'Torque' : 'Boundary', prompt: room?.refId === 'motor-load' ? 'Predict torque and explain why it changes.' : 'State a boundary condition or failure mode.' },
+    { id: 'falsifier', label: room?.refId === 'motor-load' ? 'Power / failure' : 'Falsifier', prompt: room?.refId === 'motor-load' ? 'What happens to electrical power/heat if the shaft remains stalled?' : 'Name an observation that would change your mind.' }
+  ] : [
+    { id: 'condition', label: 'Changed condition', prompt: 'What condition are you changing?' },
+    { id: 'prediction', label: 'Prediction', prompt: 'What should change, and why?' },
+    { id: 'invariant', label: 'Invariant', prompt: 'What should remain stable?' },
+    { id: 'falsifier', label: 'Falsifier', prompt: 'What observation would prove your prediction wrong?' }
+  ]);
   $: partKey = `${room?.refId || 'room'}:${currentPartIndex}:${part?.id || part?.type || 'part'}`;
   $: if (partKey !== lastPartKey) {
     lastPartKey = partKey;
@@ -40,6 +60,10 @@
     submitted = false;
     watched = false;
     completion = null;
+    chainSteps = Array(chainCount).fill('');
+    dialogueTurn = 0;
+    dialogueLog = [];
+    caseAnswers = {};
   }
 
   function iconFor(value) {
@@ -71,10 +95,11 @@
   }
 
   function finish(success, delta, detail) {
-    submitted = true;
+    submitted = success;
     feedback = detail;
     onBeliefChange(delta);
     if (success) completion = { success, delta, answer, detail };
+    else onFailure(detail);
   }
 
   function continueAfterCompletion() {
@@ -122,6 +147,86 @@
     }
     feedback = `Not stable. ${part.explanation}`;
     onBeliefChange(-Math.max(4, Math.round(reward * .8)));
+    onFailure(feedback);
+  }
+
+  function submitRecallChain() {
+    if (chainSteps.some((step) => !String(step || '').trim())) {
+      feedback = 'Every causal link needs an explicit explanation before you can commit the chain.';
+      return;
+    }
+    answer = chainSteps.map((step, index) => `Step ${index + 1}: ${String(step).trim()}`).join(' → ');
+    const outcome = evaluateTextCheckpoint({
+      text: answer,
+      expected,
+      prompt: part.question || '',
+      type: 'recall',
+      roomId: room?.refId || '',
+      sourceHidden: Boolean(cognitionCheck?.sourceHidden)
+    });
+    const reward = checkpointReward();
+    finish(outcome.success, outcome.success ? reward : -Math.max(4, Math.round(reward * .8)), outcome.success ? `${outcome.detail} Causal chain locked.` : `${outcome.detail} Chain broke under review.`);
+  }
+
+  function submitDialogueTurn() {
+    if (!answer.trim()) return;
+    const split = Math.max(1, Math.ceil(expected.length / 2));
+    const turnTargets = dialogueTurn === 0 ? expected.slice(0, split) : expected.slice(split);
+    const targets = turnTargets.length ? turnTargets : expected;
+    const outcome = evaluateTextCheckpoint({
+      text: answer,
+      expected: targets,
+      prompt: dialogueTurn === 0 ? (part.question || '') : (part.probes?.[0] || part.question || ''),
+      type: 'dialogue',
+      roomId: room?.refId || '',
+      sourceHidden: Boolean(cognitionCheck?.sourceHidden)
+    });
+    const reward = checkpointReward();
+    if (!outcome.success) {
+      onBeliefChange(-Math.max(4, Math.round(reward * .6)));
+      feedback = `${outcome.detail} The opponent takes the point.`;
+      onFailure(feedback);
+      return;
+    }
+    dialogueLog = [...dialogueLog, { turn: dialogueTurn + 1, text: answer }];
+    if (dialogueTurn === 0 && expected.length > 1) {
+      onBeliefChange(Math.max(2, Math.round(reward * .4)));
+      dialogueTurn = 1;
+      answer = '';
+      feedback = part.probes?.[0] || 'Opponent: apply that principle to a concrete consequence. What prediction follows?';
+      return;
+    }
+    finish(true, Math.max(2, Math.round(reward * .6)), `${outcome.detail} Adversarial exchange won in ${dialogueLog.length + 1} turns.`);
+  }
+
+  function submitCaseBoard() {
+    if (caseFields.some((field) => !String(caseAnswers[field.id] || '').trim())) {
+      feedback = 'Complete every system prediction before committing the case.';
+      return;
+    }
+    answer = caseFields.map((field) => `${field.label}: ${String(caseAnswers[field.id]).trim()}`).join('\n');
+    let outcome;
+    if (part.caseFields?.some((field) => Array.isArray(field.expected) && field.expected.length)) {
+      const scores = part.caseFields.map((field) => {
+        const text = String(caseAnswers[field.id] || '').toLowerCase();
+        const hits = (field.expected || []).filter((token) => text.includes(String(token).toLowerCase())).length;
+        return hits > 0 ? 1 : 0;
+      });
+      const score = scores.reduce((sum, value) => sum + value, 0) / Math.max(1, scores.length);
+      outcome = { success: score >= .8, score, detail: `Systems board coverage ${Math.round(score * 100)}%.` };
+    } else {
+      outcome = evaluateTextCheckpoint({
+        text: answer,
+        expected,
+        prompt: part.question || '',
+        type: isBoss ? 'boss' : 'case-study',
+        roomId: room?.refId || '',
+        isBoss,
+        sourceHidden: Boolean(cognitionCheck?.sourceHidden)
+      });
+    }
+    const reward = checkpointReward();
+    finish(outcome.success, outcome.success ? reward : -Math.max(5, Math.round(reward * .8)), outcome.success ? `${outcome.detail} System prediction accepted.` : `${outcome.detail} The case collapses under load.`);
   }
 
   function completeVideo() {
@@ -217,46 +322,76 @@
         {#if feedback}<div class:negative={!submitted} class="feedback">{feedback}</div>{/if}
       </div>
     </section>
-  {:else}
-    <section class="recall-room encounter-surface">
-      <div class="brief">
-        <span class="eyebrow">{isBoss ? 'MASTERY DEFENSE' : type === 'dialogue' ? 'ADVERSARIAL DIALOGUE' : type === 'case-study' ? 'FIELD CASE' : 'CAUSAL FREE RECALL'}</span>
+  {:else if type === 'recall' || type === 'free_recall' || type === 'short_response'}
+    <section class="chain-room encounter-surface">
+      <div class="brief chain-brief">
+        <span class="eyebrow">CAUSAL CHAIN BUILDER</span>
         <h2>{part.question}</h2>
-        <p class="room-rule">Do not keyword-match. Build the mechanism so every arrow is earned.</p>
-
+        <p class="room-rule">Build the mechanism one link at a time. Every link is scored; a broken chain costs a strike.</p>
         {#if cognitionCheck?.sourceHidden}
-          <div class="blind-check"><span>BLIND TRANSFER</span><p>The source answer is intentionally hidden here. Solve from the model you learned, not from copied wording.</p></div>
-        {/if}
-        {#if part.hint && !cognitionCheck?.sourceHidden}
+          <div class="blind-check"><span>BLIND TRANSFER</span><p>No target wording is exposed. Reconstruct the model from memory.</p></div>
+        {:else if part.hint}
           <div class="intel"><span>INTEL</span><p>{part.hint}</p></div>
         {/if}
-        {#if part.probes && !cognitionCheck?.sourceHidden}
-          <div class="probe-list"><span>PRESSURE PROBES</span>{#each part.probes as probe}<p>› {probe}</p>{/each}</div>
-        {/if}
-        {#if expected.length && !cognitionCheck?.sourceHidden}
-          <div class="rubric">
-            <span>{isBoss ? 'BOSS RUBRIC' : 'TARGET CONCEPTS'}</span>
-            <div>{#each expected as item}<b>□ {item}</b>{/each}</div>
-          </div>
-        {/if}
+        <div class="strike-panel"><span>STRIKE RISK</span><b>{strikes} / {maxStrikes}</b><p>{Math.max(0, maxStrikes - strikes)} mistakes remain before the run fails.</p></div>
       </div>
-
-      <div class="answer-panel">
-        <div class="answer-heading">
-          <span>{type === 'dialogue' ? 'YOUR REBUTTAL' : isBoss ? 'FINAL SYSTEMS ARGUMENT' : 'FIELD NOTE'}</span>
-          <small>{expected.length || 'open'} evidence targets</small>
+      <div class="chain-builder">
+        <div class="answer-heading"><span>MECHANISM PATH</span><small>{chainCount} required links</small></div>
+        <div class="chain-stack">
+          {#each Array(chainCount) as _, index}
+            <label class="chain-step">
+              <span>0{index + 1}</span>
+              <div><b>{index === 0 ? 'Initial change' : index === chainCount - 1 ? 'Observable consequence' : `Causal link ${index}`}</b><small>State what changes and why the next step follows.</small></div>
+              <input value={chainSteps[index] || ''} on:input={(event) => { chainSteps[index] = event.currentTarget.value; chainSteps = [...chainSteps]; }} placeholder="Explain this link…" />
+            </label>
+            {#if index < chainCount - 1}<i class="chain-arrow">↓</i>{/if}
+          {/each}
         </div>
-        <textarea
-          bind:value={answer}
-          disabled={submitted && feedback.includes('accepted')}
-          placeholder={isBoss ? 'Defend the full system. Identify the mechanism, constraint, counterargument, and failure mode…' : 'Build the causal chain in your own words. Explain why each step follows…'}
-        ></textarea>
-        <div class="answer-footer">
-          <span>{answer.trim() ? `${answer.trim().split(/\s+/).length} words` : 'No evidence committed yet'}</span>
-          <button class="primary" disabled={!answer.trim()} on:click={submitText}>{isBoss ? 'STRIKE THE BOSS →' : 'COMMIT EVIDENCE →'}</button>
-        </div>
-        {#if feedback}<div class:negative={feedback.includes('closed') || feedback.includes('Missing') || feedback.includes('Coverage')} class="feedback">{feedback}</div>{/if}
+        {#if feedback}<div class:negative={!feedback.includes('locked')} class="feedback">{feedback}</div>{/if}
+        <div class="answer-footer"><span>{chainSteps.filter((step) => String(step || '').trim()).length}/{chainCount} links committed</span><button class="primary" disabled={chainSteps.some((step) => !String(step || '').trim())} on:click={submitRecallChain}>LOCK CAUSAL CHAIN →</button></div>
       </div>
+    </section>
+  {:else if type === 'dialogue'}
+    <section class="dialogue-room encounter-surface">
+      <div class="opponent-panel">
+        <span class="eyebrow">ADVERSARIAL DIALOGUE</span>
+        <div class="turn-meter"><span>TURN {dialogueTurn + 1} / {expected.length > 1 ? 2 : 1}</span><b>Strike {strikes}/{maxStrikes}</b></div>
+        <blockquote>{dialogueTurn === 0 ? part.question : (part.probes?.[0] || 'Apply your principle to a concrete prediction. What follows?')}</blockquote>
+        {#if dialogueLog.length}
+          <div class="dialogue-log">{#each dialogueLog as item}<div><span>YOU · TURN {item.turn}</span><p>{item.text}</p></div>{/each}</div>
+        {/if}
+        {#if cognitionCheck?.sourceHidden}<div class="blind-check"><span>NO ANSWER KEY</span><p>The opponent knows the rubric; you do not. Win the exchange from the model you learned.</p></div>{/if}
+      </div>
+      <div class="dialogue-response">
+        <div class="answer-heading"><span>YOUR REBUTTAL</span><small>{Math.max(0, maxStrikes - strikes)} strikes remaining</small></div>
+        <textarea bind:value={answer} placeholder={dialogueTurn === 0 ? 'Refute the claim with an explicit causal argument…' : 'Answer the counter-pressure with a concrete consequence or prediction…'}></textarea>
+        {#if feedback}<div class:negative={feedback.includes('takes the point') || feedback.includes('Missing') || feedback.includes('coverage 0')} class="feedback">{feedback}</div>{/if}
+        <div class="answer-footer"><span>{answer.trim() ? `${answer.trim().split(/\s+/).length} words` : 'No rebuttal committed'}</span><button class="primary" disabled={!answer.trim()} on:click={submitDialogueTurn}>{dialogueTurn === 0 && expected.length > 1 ? 'ANSWER OPPONENT →' : 'CLOSE THE ARGUMENT →'}</button></div>
+      </div>
+    </section>
+  {:else if type === 'case-study' || type === 'case_study' || type === 'boss' || isBoss}
+    <section class="case-room encounter-surface">
+      <div class="case-brief">
+        <span class="eyebrow">{isBoss ? 'BOSS SYSTEMS BOARD' : 'TRANSFER SIMULATION'}</span>
+        <h2>{part.question}</h2>
+        <p>Commit every system variable before evaluation. The board is judged as one coupled model, not as a paragraph.</p>
+        <div class="strike-panel danger"><span>{isBoss ? 'BOSS STAKES' : 'STRIKE RISK'}</span><b>{strikes} / {maxStrikes}</b><p>A failed board consumes one strike. Three strikes ends the expedition.</p></div>
+      </div>
+      <div class="systems-board">
+        <div class="answer-heading"><span>SYSTEM PREDICTIONS</span><small>{caseFields.length} coupled fields</small></div>
+        <div class="system-grid">
+          {#each caseFields as field, index}
+            <label class="system-field"><span>0{index + 1}</span><b>{field.label}</b><small>{field.prompt}</small><textarea value={caseAnswers[field.id] || ''} on:input={(event) => caseAnswers = { ...caseAnswers, [field.id]: event.currentTarget.value }} placeholder="Commit prediction…"></textarea></label>
+          {/each}
+        </div>
+        {#if feedback}<div class:negative={!feedback.includes('accepted')} class="feedback">{feedback}</div>{/if}
+        <div class="answer-footer"><span>{caseFields.filter((field) => String(caseAnswers[field.id] || '').trim()).length}/{caseFields.length} predictions committed</span><button class="primary" disabled={caseFields.some((field) => !String(caseAnswers[field.id] || '').trim())} on:click={submitCaseBoard}>{isBoss ? 'COMMIT BOSS MODEL →' : 'RUN SIMULATION →'}</button></div>
+      </div>
+    </section>
+  {:else}
+    <section class="recall-room encounter-surface">
+      <div class="brief"><span class="eyebrow">OPEN RESPONSE</span><h2>{part.question || part.prompt || part.title}</h2><p class="room-rule">Explain the mechanism precisely. Failed evidence consumes a strike.</p></div>
+      <div class="answer-panel"><div class="answer-heading"><span>YOUR RESPONSE</span><small>Strike {strikes}/{maxStrikes}</small></div><textarea bind:value={answer} placeholder="Build the causal argument…"></textarea><div class="answer-footer"><span>{answer.trim() ? `${answer.trim().split(/\s+/).length} words` : 'No evidence committed yet'}</span><button class="primary" disabled={!answer.trim()} on:click={submitText}>COMMIT EVIDENCE →</button></div>{#if feedback}<div class:negative={!feedback.includes('accepted')} class="feedback">{feedback}</div>{/if}</div>
     </section>
   {/if}
 
@@ -267,14 +402,17 @@
   .encounter{--accent:#6154df;--accent-soft:#8f86f3;--danger:#c8455f;--gold:#d6a33a;min-height:calc(100vh - 74px);position:relative;overflow:hidden;padding:18px clamp(20px,4vw,62px) 34px;background:linear-gradient(135deg,#0b1020 0%,#111827 55%,#0a0e18 100%);color:#f8fafc;font-family:Inter,system-ui,sans-serif}.encounter.boss{--accent:#9b4fe3;--accent-soft:#d17cff;--danger:#ed526c;background:linear-gradient(135deg,#160b22,#170d27 48%,#090711)}
   .map-ghost{position:absolute;inset:0;background:linear-gradient(90deg,rgba(8,12,23,.93),rgba(9,13,24,.83)),var(--map-image) center/cover no-repeat;opacity:.36;filter:saturate(.65) contrast(1.06)}.boss .map-ghost{filter:hue-rotate(205deg) saturate(.65) contrast(1.05)}
   .ambient{position:absolute;border-radius:50%;filter:blur(90px);pointer-events:none}.ambient-one{width:420px;height:420px;right:-80px;top:4%;background:rgba(97,84,223,.22)}.ambient-two{width:320px;height:320px;left:12%;bottom:-160px;background:rgba(20,184,166,.09)}.boss .ambient-one{background:rgba(155,79,227,.28)}
-  .room-identity{position:relative;z-index:2;width:min(1360px,100%);display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;margin:8px auto 16px}.badge-wrap{width:76px;height:76px;display:grid;place-items:center}.badge-wrap img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 14px 20px rgba(0,0,0,.38))}.identity-copy>span,.eyebrow{font-size:9px;letter-spacing:.14em;color:var(--accent-soft);font-weight:800}.identity-copy h1{font-size:clamp(31px,3.6vw,48px);letter-spacing:-.055em;line-height:.96;margin:6px 0 5px}.identity-copy p{font-size:12px;color:#91a0b7;margin:0}.part-progress{display:flex;align-items:center;gap:10px;margin-top:9px}.part-progress>span{font-size:7px;letter-spacing:.11em;color:#718096;font-weight:800}.part-progress>div{display:flex;gap:5px}.part-progress i{width:20px;height:3px;border-radius:999px;background:#303b4e}.part-progress i.done{background:#6254dd}.part-progress i.current{background:#9a8df6;box-shadow:0 0 10px rgba(154,141,246,.35)}.belief-chip{min-width:108px;text-align:right;border-left:1px solid rgba(148,163,184,.18);padding-left:18px}.belief-chip small,.belief-chip b{display:block}.belief-chip small{font-size:7px;letter-spacing:.11em;color:#718096}.belief-chip b{font-size:25px;letter-spacing:-.04em;color:#fff}
+  .room-identity{position:relative;z-index:2;width:min(1360px,100%);display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;margin:8px auto 16px}.badge-wrap{width:76px;height:76px;display:grid;place-items:center}.badge-wrap img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 14px 20px rgba(0,0,0,.38))}.identity-copy>span,.eyebrow{font-size:12px;letter-spacing:.14em;color:var(--accent-soft);font-weight:800}.identity-copy h1{font-size:clamp(31px,3.6vw,48px);letter-spacing:-.055em;line-height:.96;margin:6px 0 5px}.identity-copy p{font-size:12px;color:#91a0b7;margin:0}.part-progress{display:flex;align-items:center;gap:10px;margin-top:9px}.part-progress>span{font-size:12px;letter-spacing:.11em;color:#718096;font-weight:800}.part-progress>div{display:flex;gap:5px}.part-progress i{width:20px;height:3px;border-radius:999px;background:#303b4e}.part-progress i.done{background:#6254dd}.part-progress i.current{background:#9a8df6;box-shadow:0 0 10px rgba(154,141,246,.35)}.belief-chip{min-width:108px;text-align:right;border-left:1px solid rgba(148,163,184,.18);padding-left:18px}.belief-chip small,.belief-chip b{display:block}.belief-chip small{font-size:12px;letter-spacing:.11em;color:#718096}.belief-chip b{font-size:25px;letter-spacing:-.04em;color:#fff}
   .encounter-surface{position:relative;z-index:2;width:min(1360px,100%);margin:0 auto;border:1px solid rgba(148,163,184,.2);border-radius:17px;background:linear-gradient(145deg,rgba(15,23,42,.94),rgba(12,18,32,.87));box-shadow:0 34px 90px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.025);overflow:hidden;backdrop-filter:blur(18px)}
-  .cinema{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(310px,.7fr);min-height:610px}.frame-wrap{padding:18px;background:#060a12}.frame-label{height:34px;display:flex;align-items:center;justify-content:space-between;color:#718096;font-size:8px;letter-spacing:.1em}.frame-label span{color:var(--accent-soft);font-weight:800}.frame{position:relative;aspect-ratio:16/9;background:radial-gradient(circle at 50% 45%,#111827,#000 66%);border-radius:11px;overflow:hidden;box-shadow:0 16px 50px rgba(0,0,0,.48)}.frame:before{content:'VERIFIED SOURCE';position:absolute;inset:0;display:grid;place-items:center;color:#273244;font-size:9px;letter-spacing:.15em;font-weight:800}.frame iframe{position:absolute;z-index:1;inset:0;width:100%;height:100%;border:0}.mission-brief{padding:38px;display:flex;flex-direction:column;justify-content:center;border-left:1px solid rgba(148,163,184,.16)}.mission-brief h2{font-size:30px;line-height:1.06;letter-spacing:-.04em;margin:10px 0 14px}.mission-brief>p{font-size:12px;line-height:1.65;color:#a8b4c6}.source-meta{margin:18px 0;padding:12px 0;border-block:1px solid rgba(148,163,184,.16)}.source-meta span,.source-meta b{display:block}.source-meta span{font-size:8px;color:#6f7c90;text-transform:uppercase;letter-spacing:.1em}.source-meta b{font-size:10px;color:#cbd5e1;margin-top:4px;word-break:break-word}.human-lock{display:flex;gap:9px;align-items:flex-start;margin:6px 0 18px;padding:11px;border:1px solid rgba(214,163,58,.28);background:rgba(214,163,58,.07);border-radius:9px}.human-lock i{width:8px;height:8px;margin-top:3px;border-radius:50%;background:var(--gold);box-shadow:0 0 13px rgba(214,163,58,.6)}.human-lock span{font-size:9px;line-height:1.5;color:#d7c8a7}
-  .primary{border:0;border-radius:9px;background:linear-gradient(135deg,var(--accent),#7c66ee);color:#fff;padding:12px 16px;font:800 10px Inter,sans-serif;cursor:pointer;box-shadow:0 8px 24px rgba(97,84,223,.22)}.primary:hover{transform:translateY(-1px);box-shadow:0 10px 30px rgba(97,84,223,.32)}.primary:disabled{opacity:.3;cursor:not-allowed;transform:none}.primary.complete{background:#15845e}
-  .quiz-room{display:grid;grid-template-columns:minmax(300px,.82fr) minmax(0,1.18fr);min-height:590px}.quiz-brief{padding:42px;border-right:1px solid rgba(148,163,184,.16);background:linear-gradient(160deg,rgba(97,84,223,.09),transparent 56%)}.quiz-brief h2{font-size:clamp(27px,3vw,42px);line-height:1.08;letter-spacing:-.045em;margin:14px 0 16px}.quiz-brief>p{font-size:11px;line-height:1.6;color:#96a3b7}.stakes{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}.stakes span{padding:8px 10px;border:1px solid rgba(148,163,184,.18);border-radius:8px;background:rgba(15,23,42,.64);font-size:8px;color:#8492a7}.stakes b{color:#fff}.options{padding:34px 38px;display:flex;flex-direction:column;justify-content:center;gap:11px}.options button{display:grid;grid-template-columns:48px 1fr;align-items:center;text-align:left;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.62);color:#cbd5e1;border-radius:11px;overflow:hidden;cursor:pointer;transition:.16s;min-height:56px}.options button:hover,.options button.selected{border-color:var(--accent-soft);background:rgba(97,84,223,.12);transform:translateX(3px)}.options button.right{border-color:#31b989;background:rgba(49,185,137,.1)}.options button.wrong{border-color:var(--danger);background:rgba(200,69,95,.1)}.letter{height:100%;display:grid;place-items:center;border-right:1px solid rgba(148,163,184,.16);font-size:12px;font-weight:800;color:var(--accent-soft)}.option-copy{padding:16px;font-size:11px;line-height:1.45}
-  .recall-room{display:grid;grid-template-columns:minmax(340px,.94fr) minmax(0,1.06fr);min-height:590px}.brief{padding:34px 36px;border-right:1px solid rgba(148,163,184,.16);background:linear-gradient(160deg,rgba(97,84,223,.09),transparent 54%)}.brief h2{font-size:clamp(26px,2.9vw,38px);line-height:1.11;letter-spacing:-.04em;margin:11px 0}.room-rule{font-size:10px;line-height:1.55;color:#7f8da2;margin:0 0 16px}.intel,.probe-list,.rubric{margin-top:11px;padding:11px;border:1px solid rgba(148,163,184,.17);background:rgba(7,12,22,.42);border-radius:10px}.intel>span,.probe-list>span,.rubric>span{display:block;font-size:8px;letter-spacing:.1em;color:#7f8ba0;font-weight:800}.intel p,.probe-list p{font-size:9px;line-height:1.55;color:#b4becd;margin:6px 0 0}.rubric>div{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.rubric b{padding:6px 7px;border:1px solid rgba(148,163,184,.14);border-radius:7px;font-size:8px;color:#aab4c4;font-weight:600}.answer-panel{padding:28px 30px;display:flex;flex-direction:column}.answer-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.answer-heading span{font-size:9px;letter-spacing:.12em;color:var(--accent-soft);font-weight:800}.answer-heading small{font-size:8px;color:#738096}.answer-panel textarea{flex:1;min-height:330px;width:100%;resize:none;border:1px solid rgba(148,163,184,.2);background:rgba(5,9,17,.68);border-radius:12px;color:#f1f5f9;padding:18px;font:12px/1.7 Inter,sans-serif;outline:none}.answer-panel textarea:focus{border-color:var(--accent-soft);box-shadow:0 0 0 3px rgba(97,84,223,.11),0 16px 40px rgba(0,0,0,.18)}.answer-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:10px}.answer-footer>span{font-size:8px;color:#718096}.feedback{margin-top:11px;padding:11px 12px;border:1px solid rgba(49,185,137,.32);background:rgba(49,185,137,.08);border-radius:9px;color:#8de0bd;font-size:9px;line-height:1.5}.feedback.negative{border-color:rgba(200,69,95,.4);background:rgba(200,69,95,.08);color:#ffa4b5}
+  .cinema{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(310px,.7fr);min-height:610px}.frame-wrap{padding:18px;background:#060a12}.frame-label{height:34px;display:flex;align-items:center;justify-content:space-between;color:#718096;font-size:12px;letter-spacing:.1em}.frame-label span{color:var(--accent-soft);font-weight:800}.frame{position:relative;aspect-ratio:16/9;background:radial-gradient(circle at 50% 45%,#111827,#000 66%);border-radius:11px;overflow:hidden;box-shadow:0 16px 50px rgba(0,0,0,.48)}.frame:before{content:'VERIFIED SOURCE';position:absolute;inset:0;display:grid;place-items:center;color:#273244;font-size:12px;letter-spacing:.15em;font-weight:800}.frame iframe{position:absolute;z-index:1;inset:0;width:100%;height:100%;border:0}.mission-brief{padding:38px;display:flex;flex-direction:column;justify-content:center;border-left:1px solid rgba(148,163,184,.16)}.mission-brief h2{font-size:30px;line-height:1.06;letter-spacing:-.04em;margin:10px 0 14px}.mission-brief>p{font-size:12px;line-height:1.65;color:#a8b4c6}.source-meta{margin:18px 0;padding:12px 0;border-block:1px solid rgba(148,163,184,.16)}.source-meta span,.source-meta b{display:block}.source-meta span{font-size:12px;color:#6f7c90;text-transform:uppercase;letter-spacing:.1em}.source-meta b{font-size:13px;color:#cbd5e1;margin-top:4px;word-break:break-word}.human-lock{display:flex;gap:9px;align-items:flex-start;margin:6px 0 18px;padding:11px;border:1px solid rgba(214,163,58,.28);background:rgba(214,163,58,.07);border-radius:9px}.human-lock i{width:8px;height:8px;margin-top:3px;border-radius:50%;background:var(--gold);box-shadow:0 0 13px rgba(214,163,58,.6)}.human-lock span{font-size:12px;line-height:1.5;color:#d7c8a7}
+  .primary{border:0;border-radius:9px;background:linear-gradient(135deg,var(--accent),#7c66ee);color:#fff;padding:12px 16px;font:800 13px Inter,sans-serif;cursor:pointer;box-shadow:0 8px 24px rgba(97,84,223,.22)}.primary:hover{transform:translateY(-1px);box-shadow:0 10px 30px rgba(97,84,223,.32)}.primary:disabled{opacity:.3;cursor:not-allowed;transform:none}.primary.complete{background:#15845e}
+  .quiz-room{display:grid;grid-template-columns:minmax(300px,.82fr) minmax(0,1.18fr);min-height:590px}.quiz-brief{padding:42px;border-right:1px solid rgba(148,163,184,.16);background:linear-gradient(160deg,rgba(97,84,223,.09),transparent 56%)}.quiz-brief h2{font-size:clamp(27px,3vw,42px);line-height:1.08;letter-spacing:-.045em;margin:14px 0 16px}.quiz-brief>p{font-size:14px;line-height:1.6;color:#96a3b7}.stakes{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}.stakes span{padding:8px 10px;border:1px solid rgba(148,163,184,.18);border-radius:8px;background:rgba(15,23,42,.64);font-size:12px;color:#8492a7}.stakes b{color:#fff}.options{padding:34px 38px;display:flex;flex-direction:column;justify-content:center;gap:11px}.options button{display:grid;grid-template-columns:48px 1fr;align-items:center;text-align:left;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.62);color:#cbd5e1;border-radius:11px;overflow:hidden;cursor:pointer;transition:.16s;min-height:56px}.options button:hover,.options button.selected{border-color:var(--accent-soft);background:rgba(97,84,223,.12);transform:translateX(3px)}.options button.right{border-color:#31b989;background:rgba(49,185,137,.1)}.options button.wrong{border-color:var(--danger);background:rgba(200,69,95,.1)}.letter{height:100%;display:grid;place-items:center;border-right:1px solid rgba(148,163,184,.16);font-size:12px;font-weight:800;color:var(--accent-soft)}.option-copy{padding:16px;font-size:14px;line-height:1.45}
+  .recall-room{display:grid;grid-template-columns:minmax(340px,.94fr) minmax(0,1.06fr);min-height:590px}.brief{padding:34px 36px;border-right:1px solid rgba(148,163,184,.16);background:linear-gradient(160deg,rgba(97,84,223,.09),transparent 54%)}.brief h2{font-size:clamp(26px,2.9vw,38px);line-height:1.11;letter-spacing:-.04em;margin:11px 0}.room-rule{font-size:13px;line-height:1.55;color:#7f8da2;margin:0 0 16px}.intel{margin-top:11px;padding:11px;border:1px solid rgba(148,163,184,.17);background:rgba(7,12,22,.42);border-radius:10px}.intel>span{display:block;font-size:12px;letter-spacing:.1em;color:#7f8ba0;font-weight:800}.intel p{font-size:12px;line-height:1.55;color:#b4becd;margin:6px 0 0}.answer-panel{padding:28px 30px;display:flex;flex-direction:column}.answer-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.answer-heading span{font-size:12px;letter-spacing:.12em;color:var(--accent-soft);font-weight:800}.answer-heading small{font-size:12px;color:#738096}.answer-panel textarea{flex:1;min-height:330px;width:100%;resize:none;border:1px solid rgba(148,163,184,.2);background:rgba(5,9,17,.68);border-radius:12px;color:#f1f5f9;padding:18px;font:12px/1.7 Inter,sans-serif;outline:none}.answer-panel textarea:focus{border-color:var(--accent-soft);box-shadow:0 0 0 3px rgba(97,84,223,.11),0 16px 40px rgba(0,0,0,.18)}.answer-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:10px}.answer-footer>span{font-size:12px;color:#718096}.feedback{margin-top:11px;padding:11px 12px;border:1px solid rgba(49,185,137,.32);background:rgba(49,185,137,.08);border-radius:9px;color:#8de0bd;font-size:12px;line-height:1.5}.feedback.negative{border-color:rgba(200,69,95,.4);background:rgba(200,69,95,.08);color:#ffa4b5}
   .belief-ambient{position:absolute;left:0;right:0;bottom:0;height:4px;background:linear-gradient(90deg,#c8455f 0%,#d6a33a 42%,var(--accent-soft) var(--belief),rgba(51,65,85,.4) var(--belief));box-shadow:0 -10px 30px rgba(97,84,223,.13)}
-  .cognition-check{display:flex;align-items:center;gap:7px;width:max-content;margin-top:9px;padding:5px 8px;border:1px solid rgba(145,134,239,.28);border-radius:999px;background:rgba(97,84,223,.08)}.cognition-check i{width:6px;height:6px;border-radius:50%;background:#9a8df6;box-shadow:0 0 10px rgba(154,141,246,.55)}.cognition-check span{font-size:6px;letter-spacing:.13em;color:#7f8ba0;font-weight:850}.cognition-check b{font-size:7px;color:#c1bbff;text-transform:uppercase;letter-spacing:.05em}.blind-check{margin:11px 0 0;padding:10px 11px;border:1px solid rgba(145,134,239,.22);border-left:3px solid #9186ef;border-radius:9px;background:rgba(97,84,223,.07)}.blind-check span{display:block;font-size:7px;letter-spacing:.12em;color:#a9a0ff;font-weight:850}.blind-check p{margin:5px 0 0;font-size:8px;line-height:1.5;color:#9aa7bb}
-  @media(max-width:960px){.cinema,.quiz-room,.recall-room{grid-template-columns:1fr}.mission-brief,.quiz-brief,.brief{border-left:0;border-right:0;border-top:1px solid rgba(148,163,184,.16)}.frame-wrap{order:1}.mission-brief{order:2}.room-identity{grid-template-columns:auto 1fr}.belief-chip{display:none}.recall-room{min-height:auto}.answer-panel textarea{min-height:280px}.rubric>div{grid-template-columns:1fr 1fr}}
-  @media(max-width:620px){.encounter{padding:18px 12px 40px}.room-identity{margin:12px 0 17px}.badge-wrap{width:64px;height:64px}.identity-copy h1{font-size:32px}.cinema,.quiz-room,.recall-room{border-radius:12px}.mission-brief,.quiz-brief,.brief,.answer-panel,.options{padding:22px}.rubric>div{grid-template-columns:1fr}.frame-wrap{padding:10px}.answer-panel textarea{min-height:240px}.answer-footer{align-items:flex-start;flex-direction:column}.answer-footer .primary{width:100%}}
+  .cognition-check{display:flex;align-items:center;gap:7px;width:max-content;margin-top:9px;padding:5px 8px;border:1px solid rgba(145,134,239,.28);border-radius:999px;background:rgba(97,84,223,.08)}.cognition-check i{width:6px;height:6px;border-radius:50%;background:#9a8df6;box-shadow:0 0 10px rgba(154,141,246,.55)}.cognition-check span{font-size:12px;letter-spacing:.13em;color:#7f8ba0;font-weight:850}.cognition-check b{font-size:12px;color:#c1bbff;text-transform:uppercase;letter-spacing:.05em}.blind-check{margin:11px 0 0;padding:10px 11px;border:1px solid rgba(145,134,239,.22);border-left:3px solid #9186ef;border-radius:9px;background:rgba(97,84,223,.07)}.blind-check span{display:block;font-size:12px;letter-spacing:.12em;color:#a9a0ff;font-weight:850}.blind-check p{margin:5px 0 0;font-size:12px;line-height:1.5;color:#9aa7bb}
+
+  .chain-room,.dialogue-room,.case-room{display:grid;grid-template-columns:minmax(360px,.82fr) minmax(0,1.18fr);min-height:610px}.chain-builder,.dialogue-response,.systems-board{padding:30px 34px;display:flex;flex-direction:column}.chain-stack{display:flex;flex-direction:column;gap:6px;flex:1}.chain-step{display:grid;grid-template-columns:42px minmax(150px,.55fr) 1fr;align-items:center;gap:12px;padding:12px;border:1px solid rgba(148,163,184,.18);border-radius:11px;background:rgba(5,9,17,.48)}.chain-step>span{width:34px;height:34px;display:grid;place-items:center;border:1px solid rgba(145,134,239,.32);border-radius:9px;color:#b9b2ff;font-weight:850;font-size:12px}.chain-step b,.chain-step small{display:block}.chain-step b{font-size:14px;color:#eef2ff}.chain-step small{margin-top:3px;font-size:12px;color:#8794a8}.chain-step input{width:100%;border:1px solid rgba(148,163,184,.2);background:#070c16;color:#f8fafc;border-radius:9px;padding:11px 12px;font-size:14px;outline:none}.chain-step input:focus{border-color:var(--accent-soft);box-shadow:0 0 0 3px rgba(97,84,223,.1)}.chain-arrow{height:12px;display:grid;place-items:center;color:#7468e4;font-style:normal;font-size:16px}.strike-panel{margin-top:18px;padding:13px 14px;border:1px solid rgba(239,174,68,.3);background:rgba(239,174,68,.07);border-radius:10px}.strike-panel>span,.strike-panel>b{display:block}.strike-panel>span{font-size:12px;letter-spacing:.1em;color:#f0b45d;font-weight:850}.strike-panel>b{margin-top:5px;font-size:24px}.strike-panel p{margin:4px 0 0;font-size:13px;line-height:1.45;color:#a9b3c2}.strike-panel.danger{border-color:rgba(239,71,111,.35);background:rgba(239,71,111,.07)}.strike-panel.danger>span{color:#ff8da8}.opponent-panel,.case-brief{padding:36px;border-right:1px solid rgba(148,163,184,.16);background:linear-gradient(160deg,rgba(97,84,223,.1),transparent 58%)}.opponent-panel blockquote{margin:22px 0;padding:20px;border-left:3px solid #9186ef;background:rgba(7,12,22,.45);font-size:24px;line-height:1.28;font-weight:760;letter-spacing:-.025em}.turn-meter{display:flex;align-items:center;justify-content:space-between;margin-top:14px;color:#99a6ba;font-size:13px}.turn-meter span{color:#b8b1ff;font-weight:800}.dialogue-log{display:grid;gap:8px;margin-top:16px}.dialogue-log div{padding:10px 12px;border:1px solid rgba(49,185,137,.2);border-radius:9px;background:rgba(49,185,137,.06)}.dialogue-log span{font-size:12px;letter-spacing:.08em;color:#75d6b2;font-weight:800}.dialogue-log p{margin:5px 0 0;font-size:13px;line-height:1.45;color:#c9d2de}.dialogue-response textarea{flex:1;min-height:360px;border:1px solid rgba(148,163,184,.2);background:rgba(5,9,17,.68);border-radius:12px;color:#f1f5f9;padding:18px;font:14px/1.65 Inter,sans-serif;resize:none;outline:none}.case-brief h2{font-size:clamp(25px,2.6vw,36px);line-height:1.12;margin:12px 0 14px}.case-brief>p{font-size:14px;line-height:1.6;color:#9ba8ba}.system-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1}.system-field{display:grid;grid-template-columns:34px 1fr;grid-template-rows:auto auto 1fr;gap:2px 10px;padding:12px;border:1px solid rgba(148,163,184,.18);border-radius:11px;background:rgba(5,9,17,.48)}.system-field>span{grid-row:1/3;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:rgba(97,84,223,.12);color:#b9b2ff;font-size:12px;font-weight:850}.system-field>b{font-size:14px}.system-field>small{font-size:12px;color:#8794a8}.system-field textarea{grid-column:1/-1;margin-top:8px;min-height:90px;resize:none;border:1px solid rgba(148,163,184,.18);border-radius:8px;background:#070c16;color:#f8fafc;padding:10px;font:13px/1.5 Inter,sans-serif;outline:none}.system-field textarea:focus,.dialogue-response textarea:focus{border-color:var(--accent-soft);box-shadow:0 0 0 3px rgba(97,84,223,.1)}
+
+  @media(max-width:960px){.cinema,.quiz-room,.recall-room,.chain-room,.dialogue-room,.case-room{grid-template-columns:1fr}.mission-brief,.quiz-brief,.brief{border-left:0;border-right:0;border-top:1px solid rgba(148,163,184,.16)}.frame-wrap{order:1}.mission-brief{order:2}.room-identity{grid-template-columns:auto 1fr}.belief-chip{display:none}.recall-room{min-height:auto}.answer-panel textarea{min-height:280px}}
+  @media(max-width:620px){.encounter{padding:18px 12px 40px}.room-identity{margin:12px 0 17px}.badge-wrap{width:64px;height:64px}.identity-copy h1{font-size:32px}.cinema,.quiz-room,.recall-room,.chain-room,.dialogue-room,.case-room{border-radius:12px}.mission-brief,.quiz-brief,.brief,.answer-panel,.options{padding:22px}.frame-wrap{padding:10px}.answer-panel textarea{min-height:240px}.answer-footer{align-items:flex-start;flex-direction:column}.answer-footer .primary{width:100%}}
 </style>
