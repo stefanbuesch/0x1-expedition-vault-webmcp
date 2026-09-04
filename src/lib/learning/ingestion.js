@@ -182,8 +182,8 @@ export function generateKnowledgePackFromMaterial({ title = '', content = '', ur
     makeRoom({
       refId: id('review'), title: 'Thesis Gate', subtitle: 'Separate claim, mechanism, and distractor', nodeType: 'quiz', beliefDelta: 7, glyph: '02',
       map: { row: 1, column: 0 }, edges: [
-        { targetRefId: id('mechanism'), type: 'OPTION' },
-        { targetRefId: id('evidence'), type: 'OPTION' }
+        { targetRefId: id('mechanism'), type: 'OPTION', intent: 'challenge', lane: 'risk' },
+        { targetRefId: id('evidence'), type: 'OPTION', intent: 'comfort', lane: 'recovery' }
       ],
       parts: [
         thesisQuiz,
@@ -228,8 +228,8 @@ export function generateKnowledgePackFromMaterial({ title = '', content = '', ur
     makeRoom({
       refId: id('transfer'), title: 'Transfer Arena', subtitle: 'Apply the model under changed conditions', nodeType: 'case-study', beliefDelta: 12, glyph: '04',
       map: { row: 3, column: 0 }, edges: [
-        { targetRefId: id('prep'), type: 'OPTION' },
-        { targetRefId: id('pressure'), type: 'OPTION' }
+        { targetRefId: id('prep'), type: 'OPTION', intent: 'comfort', lane: 'recovery' },
+        { targetRefId: id('pressure'), type: 'OPTION', intent: 'challenge', lane: 'risk' }
       ],
       parts: [
         {

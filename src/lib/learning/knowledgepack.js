@@ -10,7 +10,7 @@ export const MOTOR_SYSTEMS_PACK = {
     {
       refId: 'field-lines', title: 'Field Lines', subtitle: 'The geometry of force', nodeType: 'video', status: 'available', map: { row: 0, column: 0, presentation: { x: 292, y: 160 } },
       mastery: 72, beliefDelta: 4, glyph: 'Φ',
-      edges: [{ targetRefId: 'faraday', type: 'NEXT' }],
+      edges: [{ targetRefId: 'faraday', type: 'NEXT', intent: 'neutral', lane: 'balanced' }],
       part: {
         type: 'video', title: 'Electric motors: field, force, torque',
         videoUrl: 'https://www.youtube.com/embed/pAgPfr7MkkU?rel=0',
@@ -22,8 +22,8 @@ export const MOTOR_SYSTEMS_PACK = {
       refId: 'faraday', title: 'Faraday Induction', subtitle: 'Motion writes voltage', nodeType: 'quiz', status: 'locked', map: { row: 1, column: 0, presentation: { x: 407, y: 195 } },
       mastery: 38, beliefDelta: 6, glyph: '∂',
       edges: [
-        { targetRefId: 'back-emf', type: 'NEXT' },
-        { targetRefId: 'lenz-law', type: 'OPTION' }
+        { targetRefId: 'back-emf', type: 'NEXT', intent: 'challenge', lane: 'risk' },
+        { targetRefId: 'lenz-law', type: 'OPTION', intent: 'comfort', lane: 'recovery' }
       ],
       part: {
         type: 'quiz', strikeRisk: true, question: 'A loop experiences a faster change in magnetic flux. What happens to induced EMF, all else equal?',
@@ -35,8 +35,8 @@ export const MOTOR_SYSTEMS_PACK = {
       refId: 'back-emf', title: 'Back-EMF', subtitle: 'The motor fights back', nodeType: 'recall', status: 'locked', map: { row: 2, column: -1, presentation: { x: 514, y: 99 } },
       mastery: 21, beliefDelta: 9, glyph: '↯',
       edges: [
-        { targetRefId: 'motor-load', type: 'GATE' },
-        { targetRefId: 'lenz-law', type: 'BRANCH' }
+        { targetRefId: 'motor-load', type: 'GATE', intent: 'challenge', lane: 'risk' },
+        { targetRefId: 'lenz-law', type: 'BRANCH', intent: 'comfort', lane: 'recovery' }
       ],
       part: {
         type: 'recall', strikeRisk: true,
@@ -48,7 +48,7 @@ export const MOTOR_SYSTEMS_PACK = {
     {
       refId: 'lenz-law', title: "Lenz's Law", subtitle: 'Opposition has a direction', nodeType: 'dialogue', status: 'locked', map: { row: 3, column: 1, presentation: { x: 669, y: 165 } },
       mastery: 18, beliefDelta: 8, glyph: '↺',
-      edges: [{ targetRefId: 'motor-load', type: 'GATE' }],
+      edges: [{ targetRefId: 'motor-load', type: 'GATE', intent: 'challenge', lane: 'risk' }],
       part: {
         type: 'dialogue', strikeRisk: true,
         question: 'I claim the induced current helps the magnetic-flux change that created it. Refute me in two steps.',
@@ -60,7 +60,7 @@ export const MOTOR_SYSTEMS_PACK = {
     {
       refId: 'motor-load', title: 'Motor Under Load', subtitle: 'Boss: causal systems test', nodeType: 'boss', status: 'locked', map: { row: 4, column: 0, presentation: { x: 615, y: 250 } },
       mastery: 8, beliefDelta: 14, glyph: '⚙',
-      edges: [{ targetRefId: 'commutation', type: 'NEXT' }],
+      edges: [{ targetRefId: 'commutation', type: 'NEXT', intent: 'neutral', lane: 'balanced' }],
       part: {
         type: 'case-study', strikeRisk: true,
         question: 'BOSS CASE // A conveyor motor runs unloaded, then receives a sudden mechanical load. Predict the immediate and settling behavior of speed, back-EMF, current, torque, and electrical power. Identify one failure mode if the shaft remains stalled.',

@@ -33,6 +33,7 @@
   let maxStrikes = 3;
   let runStatus = 'active';
   let failureReason = '';
+  let pathTaken = [];
   let evidence = [];
   let activity = [];
   let exposedTools = [];
@@ -143,6 +144,14 @@
     });
     cleared = rooms.slice(0, n).map((room) => room.refId);
     currentRoomId = rooms[Math.min(n, rooms.length - 1)]?.refId || rooms[0]?.refId || '';
+    pathTaken = rooms.slice(0, n).map((room) => room.refId);
+    for (let index = 0; index < n; index += 1) {
+      const from = rooms[index];
+      const to = rooms[index + 1];
+      if (!from || !to) continue;
+      const edge = (from.edges || []).find((candidate) => candidate.targetRefId === to.refId);
+      if (edge) edge.taken = true;
+    }
     beliefHistory = [{ index: 0, belief, delta: 0, roomId: currentRoomId, actor: 'system' }];
   }
 
@@ -161,6 +170,7 @@
       maxStrikes,
       runStatus,
       failureReason,
+      pathTaken: [...pathTaken],
       evidence: structuredClone(evidence),
       elapsed,
       activity: structuredClone(activity.slice(0, 12))
@@ -302,6 +312,7 @@
     maxStrikes = Math.max(1, Number(snapshot.maxStrikes || 3));
     runStatus = snapshot.runStatus || 'active';
     failureReason = snapshot.failureReason || '';
+    pathTaken = snapshot.pathTaken || [];
     evidence = snapshot.evidence || [];
     elapsed = Number(snapshot.elapsed || 0);
     activity = snapshot.activity || [];
@@ -344,6 +355,7 @@
     maxStrikes = Math.max(1, Number(pack.maxStrikes || 3));
     runStatus = 'active';
     failureReason = '';
+    pathTaken = [];
     evidence = [];
     elapsed = 0;
     showPostRun = false;
@@ -416,10 +428,49 @@
     rooms = [...rooms];
   }
 
+  function commitPathChoice(targetId, actor = 'human') {
+    const target = rooms.find((candidate) => candidate.refId === targetId);
+    if (!target || target.status !== 'available') return null;
+    const source = rooms.find((candidate) => candidate.refId === currentRoomId);
+    if (!source) return null;
+    const outgoing = (source.edges || []).filter((edge) => {
+      const candidate = rooms.find((room) => room.refId === edge.targetRefId);
+      return candidate?.status === 'available' && !cleared.includes(candidate.refId);
+    });
+    const chosenEdge = outgoing.find((edge) => edge.targetRefId === targetId);
+    if (!chosenEdge) return null;
+
+    const targetRow = Number.isFinite(target.map?.row) ? target.map.row : null;
+    for (const edge of source.edges || []) edge.taken = edge.targetRefId === targetId;
+    for (const candidate of rooms) {
+      if (candidate.refId === targetId) continue;
+      const sameRow = targetRow !== null && Number.isFinite(candidate.map?.row) && candidate.map.row === targetRow;
+      if (sameRow && candidate.status === 'available') candidate.status = 'skipped';
+    }
+    pathTaken = [...pathTaken, targetId];
+    rooms = [...rooms];
+    log(actor === 'agent' ? 'agent_path_choice' : 'human_path_choice', {
+      fromNodeId: source.refId,
+      nodeId: targetId,
+      intent: chosenEdge.intent || 'neutral',
+      lane: chosenEdge.lane || 'balanced',
+      skipped: outgoing.filter((edge) => edge.targetRefId !== targetId).map((edge) => edge.targetRefId)
+    }, `Committed ${source.title} → ${target.title}`, 'state');
+    return chosenEdge;
+  }
+
   function openRoom(id, actor = 'human') {
     if (runStatus !== 'active') return false;
     const room = rooms.find((candidate) => candidate.refId === id);
-    if (!room || room.status === 'locked') return false;
+    if (!room || room.status === 'locked' || room.status === 'skipped') return false;
+    if (room.status === 'available' && id !== currentRoomId) {
+      const source = rooms.find((candidate) => candidate.refId === currentRoomId);
+      const liveOutgoing = (source?.edges || []).filter((edge) => {
+        const target = rooms.find((candidate) => candidate.refId === edge.targetRefId);
+        return target?.status === 'available' && !cleared.includes(target.refId);
+      });
+      if (liveOutgoing.some((edge) => edge.targetRefId === id)) commitPathChoice(id, actor);
+    }
     currentRoomId = id;
     activeRoomId = id;
     activePartIndex = 0;
@@ -454,11 +505,9 @@
     }].slice(-20);
     unlockFrom(room);
 
-    const next = (room.edges || [])
-      .map((edge) => rooms.find((candidate) => candidate.refId === edge.targetRefId))
-      .filter((candidate) => candidate?.status === 'available' && !cleared.includes(candidate.refId))
-      .sort((a, b) => (a.mastery || 0) - (b.mastery || 0))[0];
-    if (next) currentRoomId = next.refId;
+    // Source runtime semantics: completing a node exposes every reachable child.
+    // The run stays anchored on the completed node until the learner/agent explicitly chooses a path.
+    currentRoomId = room.refId;
 
     activeRoomId = '';
     activePartIndex = 0;
@@ -661,7 +710,9 @@
         concepts: pack.concepts || [],
         source: pack.source || {},
         trajectory: beliefHistory.slice(-10),
-        evidence: evidence.slice(-8)
+        evidence: evidence.slice(-8),
+        pathTaken: [...pathTaken],
+        availableChoices: availableRooms.map((room) => room.refId)
       };
     },
     submitSolution(moduleId, solution) {
@@ -709,6 +760,7 @@
       maxStrikes,
       threshold: pack.threshold || 50,
       progress: overallProgress,
+      pathTaken: [...pathTaken],
       source: pack.source || {},
       modules: rooms.map((room) => {
         const parts = Array.isArray(room.parts) && room.parts.length ? room.parts : [room.part].filter(Boolean);
