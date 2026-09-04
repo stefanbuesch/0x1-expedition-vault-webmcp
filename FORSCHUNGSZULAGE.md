@@ -23,3 +23,9 @@ I added hidden causal targets to the bundled Lenz dialogue and changed source-hi
 I tightened source-hidden cognition checks against prompt leakage. Source-text concept extraction now ignores course-title tokens when real source material exists, so scoring targets reflect mechanisms and evidence rather than the label of the course. For source-hidden checkpoints, the evaluator removes target tokens already present in the question before calculating coverage; restating the prompt therefore earns no hidden-target credit.
 
 I tested every hidden stage in generated Feedback Control and Plate Tectonics packs. A verbose answer made from the prompt plus causal-sounding filler failed every hidden checkpoint, while answers containing learned source concepts plus causal/falsification structure passed every hidden checkpoint. This keeps the challenges solvable without exposing their answer key.
+
+## 2026-09-04 07:43:57 CEST
+
+I ran a production-oriented Lighthouse audit after freezing the runtime. The baseline scored 100 performance, 100 best practices, 100 SEO, and 95 accessibility. I traced the accessibility loss to compact microcopy contrast and ARIA names that overrode visible map/badge labels.
+
+I darkened only the affected compact text states, removed mismatched map-node aria-label overrides, and included visible badge numbers in the concept-master accessible names. A clean local Lighthouse accessibility rerun then scored 100, with both color-contrast and label-content-name-mismatch audits fully passing. I kept the visual hierarchy and first-viewport density unchanged.

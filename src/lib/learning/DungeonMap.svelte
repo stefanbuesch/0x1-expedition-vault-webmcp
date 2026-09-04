@@ -128,7 +128,6 @@
       style={`left:${node.x / WIDTH * 100}%;top:${node.y / HEIGHT * 100}%`}
       disabled={state === 'locked'}
       on:click={() => onRoomClick(node.room.refId)}
-      aria-label={`${node.room.title}, ${state}`}
     >
       <span class="node-orb"><img src={iconFor(node.room, index)} alt="" /></span>
       <strong>{node.room.title}</strong>

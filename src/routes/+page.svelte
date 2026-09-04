@@ -935,7 +935,7 @@
                 {#each rooms.slice(0, 6) as room, index}
                   {@const done = cleared.includes(room.refId)}
                   {@const current = room.refId === currentRoomId}
-                  <button class:done class:current class:locked={room.status === 'locked'} disabled={room.status === 'locked'} on:click={() => openRoom(room.refId)} aria-label={`${room.title}, ${done ? 'mastered' : current ? 'current' : room.status}`}>
+                  <button class:done class:current class:locked={room.status === 'locked'} disabled={room.status === 'locked'} on:click={() => openRoom(room.refId)} aria-label={`${index + 1}. ${room.title}, ${done ? 'mastered' : current ? 'current' : room.status}`}>
                     <span><img src={roomBadge(room)} alt="" loading="lazy" decoding="async" /></span>
                     <small>{index + 1}</small>
                   </button>
